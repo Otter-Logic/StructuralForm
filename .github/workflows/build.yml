@@ -1,0 +1,36 @@
+name: build
+
+# Build only. Every test boots Rhino through Rhino.Inside, and a hosted runner
+# has neither Rhino nor a licence for one, so `dotnet test` here would fail for
+# reasons unrelated to the change. Run tests locally; CI guards compilation.
+#
+# The sibling repos are checked out so the project references resolve. Once
+# the dependency is published on nuget.org, these extra checkouts can go and the
+# build will fall through to the pinned packages instead.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: StructuralForm
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Otter-Logic/Core
+          path: Core
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build StructuralForm/OtterLogic.slnx -c Release
