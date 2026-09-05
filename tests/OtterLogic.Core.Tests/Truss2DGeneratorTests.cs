@@ -51,7 +51,7 @@ public class Truss2DGeneratorTests
     }
 
     [Fact]
-    public void A_vertex_on_either_chord_creates_a_node_on_both()
+    public void A_vertex_on_either_chord_creates_a_node_on_both_when_geometry_drives()
     {
         Truss2D truss = Truss2DGenerator.Generate(
             StraightChord(Depth),
@@ -206,6 +206,7 @@ public class Truss2DGeneratorTests
         Assert.Equal(4, truss.PanelCount);                 // count is unchanged
         Assert.Equal(3.4, truss.TopNodes[1].X, 6);         // but the station moved
         Assert.Equal(6.0, truss.TopNodes[2].X, 6);         // and its neighbours did not
+        Assert.Equal(3.0, truss.BottomNodes[1].X, 6);      // nor did the other chord
     }
 
     [Fact]
@@ -252,6 +253,69 @@ public class Truss2DGeneratorTests
     {
         Assert.Throws<ArgumentException>(() => Truss2DGenerator.Generate(
             StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = -1 }));
+    }
+
+    // ---- each chord snaps on its own ---------------------------------------
+
+    [Fact]
+    public void Each_chord_snaps_to_its_own_points()
+    {
+        // Four panels put both chords at x = 0, 3, 6, 9, 12. The top chord has a
+        // vertex near its second station, the bottom chord near its fourth.
+        Truss2D truss = Truss2DGenerator.Generate(
+            PolylineChord(Depth, 3.4), PolylineChord(0, 8.0), new Truss2DOptions { Divisions = 4 });
+
+        Assert.Equal(4, truss.PanelCount);
+
+        Assert.Equal(3.4, truss.TopNodes[1].X, 6);         // top pulled to its vertex
+        Assert.Equal(3.0, truss.BottomNodes[1].X, 6);      // bottom unmoved there
+
+        Assert.Equal(9.0, truss.TopNodes[3].X, 6);         // top unmoved here
+        Assert.Equal(8.0, truss.BottomNodes[3].X, 6);      // bottom pulled to its vertex
+    }
+
+    [Fact]
+    public void A_picked_point_beside_one_chord_leaves_the_other_alone()
+    {
+        // The point sits just above the bottom chord, so it belongs to it.
+        Truss2D truss = Truss2DGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new Truss2DOptions
+            {
+                Divisions = 2,
+                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, 0.1) },
+            });
+
+        Assert.Equal(5.0, truss.BottomNodes[1].X, 6);
+        Assert.Equal(6.0, truss.TopNodes[1].X, 6);
+    }
+
+    [Fact]
+    public void Chords_keep_matching_node_counts_when_they_snap_differently()
+    {
+        Truss2D truss = Truss2DGenerator.Generate(
+            PolylineChord(Depth, 2.6, 5.2, 9.4),
+            PolylineChord(0, 3.3, 6.4),
+            new Truss2DOptions { Divisions = 5 });
+
+        Assert.Equal(truss.TopNodes.Count, truss.BottomNodes.Count);
+        Assert.Equal(6, truss.TopNodes.Count);
+    }
+
+    [Fact]
+    public void Independently_snapped_chords_still_pair_by_index()
+    {
+        Truss2D truss = Truss2DGenerator.Generate(
+            PolylineChord(Depth, 3.4), PolylineChord(0, 8.0),
+            new Truss2DOptions { Divisions = 4, Type = TrussType.Vierendeel });
+
+        var nodes = truss.Nodes;
+
+        Assert.All(truss.Members, member =>
+        {
+            Assert.Equal(nodes[member.StartNode], member.Line.From);
+            Assert.Equal(nodes[member.EndNode], member.Line.To);
+        });
     }
 
     // ---- flip --------------------------------------------------------------

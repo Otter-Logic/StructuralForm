@@ -10,25 +10,29 @@ namespace OtterLogic.Core.StructuralForm;
 /// <see cref="Generate"/> and nothing else, so the two front-ends cannot drift.
 /// </para>
 /// <para>
-/// Nodes sit at shared <em>stations</em> — normalised arc-length positions
-/// running 0 to 1 along each chord. Because both chords are evaluated at the
-/// same station list, top node <c>i</c> always pairs with bottom node <c>i</c>
-/// and every web pattern reduces to index arithmetic.
+/// Nodes sit at <em>stations</em> — normalised arc-length positions running 0 to
+/// 1 along a chord. Each chord carries its own station list of the same length,
+/// so top node <c>i</c> always pairs with bottom node <c>i</c> and every web
+/// pattern reduces to index arithmetic, while the two chords stay free to place
+/// that node at different points along their own length.
 /// </para>
 /// <para>
-/// Two ways of arriving at that list, and the difference matters:
+/// Two ways of arriving at those lists, and the difference matters:
 /// </para>
 /// <list type="bullet">
 /// <item><description>
 /// With <see cref="Truss2DOptions.Divisions"/> (or
 /// <see cref="Truss2DOptions.SnapSpacing"/>) set, the panel count is fixed up
-/// front and the stations are laid out evenly, then <em>snapped</em> onto nearby
-/// snap points. The member count is whatever you asked for; the snap points only
-/// move members, never add them.
+/// front and both chords are laid out evenly, then each is <em>snapped</em>
+/// independently onto its own nearby snap points. A point beside the bottom
+/// chord moves the bottom node and leaves the top one where it was. The member
+/// count is whatever you asked for; snap points move members, never add them.
 /// </description></item>
 /// <item><description>
 /// With neither set, the snap points <em>are</em> the stations: polyline
-/// vertices, curve kinks and picked points each become a node.
+/// vertices, curve kinks and picked points each become a node. Here the two
+/// chords must share one list, because the points are what decide how many
+/// panels there are and the chords have to agree on that.
 /// </description></item>
 /// </list>
 /// </summary>
@@ -57,14 +61,14 @@ public static class Truss2DGenerator
         if (topLength <= RhinoMath.ZeroTolerance || bottomLength <= RhinoMath.ZeroTolerance)
             throw new ArgumentException("Both chords must have length.");
 
-        double[] stations = ResolveStations(top, bottom, topLength, bottomLength, options);
+        var (topStations, bottomStations) = ResolveStations(top, bottom, topLength, bottomLength, options);
 
-        var topNodes = new Point3d[stations.Length];
-        var bottomNodes = new Point3d[stations.Length];
-        for (int i = 0; i < stations.Length; i++)
+        var topNodes = new Point3d[topStations.Length];
+        var bottomNodes = new Point3d[bottomStations.Length];
+        for (int i = 0; i < topStations.Length; i++)
         {
-            topNodes[i] = PointAtStation(top, stations[i]);
-            bottomNodes[i] = PointAtStation(bottom, stations[i]);
+            topNodes[i] = PointAtStation(top, topStations[i]);
+            bottomNodes[i] = PointAtStation(bottom, bottomStations[i]);
         }
 
         // Chords that converge to a shared point need no post there.
@@ -93,34 +97,56 @@ public static class Truss2DGenerator
         return bottom;
     }
 
-    private static double[] ResolveStations(
+    /// <summary>
+    /// The station list for each chord. Always the same length, so nodes pair by
+    /// index, but not necessarily the same values.
+    /// </summary>
+    private static (double[] Top, double[] Bottom) ResolveStations(
         Curve top, Curve bottom, double topLength, double bottomLength, Truss2DOptions options)
     {
         double merge = Math.Clamp(options.SnapTolerance / Math.Max(topLength, bottomLength), 1e-9, 0.25);
 
-        // Everything the geometry and the user say is a real point.
-        var targets = new List<double>();
-        targets.AddRange(GeometryStations(top, topLength));
-        targets.AddRange(GeometryStations(bottom, bottomLength));
+        // Each chord owns its snap points: its own vertices and kinks, plus the
+        // picked points lying nearer to it than to the other chord.
+        var topTargets = new List<double>(GeometryStations(top, topLength));
+        var bottomTargets = new List<double>(GeometryStations(bottom, bottomLength));
 
         foreach (Point3d point in options.AdditionalSnapPoints)
-            targets.Add(StationOfPoint(top, bottom, topLength, bottomLength, point));
+            AssignToNearerChord(top, bottom, topLength, bottomLength, point, topTargets, bottomTargets);
 
         int panels = ResolvePanelCount(options, topLength, bottomLength);
 
-        // No division driver: the snap points are the nodes.
+        // No division driver: the snap points decide the panel count, so the two
+        // chords have to agree on one shared list.
         if (panels <= 0)
-            return Sort(targets, merge, includeEnds: true);
+        {
+            double[] shared = Sort(topTargets.Concat(bottomTargets).ToList(), merge, includeEnds: true);
+            return (shared, shared);
+        }
 
+        double[] topStations = EvenStations(panels);
+        double[] bottomStations = EvenStations(panels);
+
+        // Half a panel each way: far enough to reach a nearby point, never far
+        // enough for two stations to swap places or collapse together. Snapping
+        // runs per chord, so a point beside one chord leaves the other alone.
+        double radius = 0.5 / panels;
+        SnapToTargets(topStations, Sort(topTargets, merge, includeEnds: false), radius);
+        SnapToTargets(bottomStations, Sort(bottomTargets, merge, includeEnds: false), radius);
+
+        // Deliberately not de-duplicated afterwards: merging a pair on one chord
+        // but not the other would leave the lists different lengths and break the
+        // pairing. The snap radius already keeps stations in order and apart.
+        return (topStations, bottomStations);
+    }
+
+    private static double[] EvenStations(int panels)
+    {
         var stations = new double[panels + 1];
         for (int i = 0; i <= panels; i++)
             stations[i] = i / (double)panels;
 
-        // Half a panel each way: far enough to reach a nearby point, never far
-        // enough for two stations to swap places or collapse together.
-        SnapToTargets(stations, Sort(targets, merge, includeEnds: false), 0.5 / panels);
-
-        return Sort(stations.ToList(), merge, includeEnds: true);
+        return stations;
     }
 
     /// <summary>
@@ -211,8 +237,20 @@ public static class Truss2DGenerator
         }
     }
 
-    private static double StationOfPoint(
-        Curve top, Curve bottom, double topLength, double bottomLength, Point3d point)
+    /// <summary>
+    /// File a picked point with whichever chord it sits closer to. It becomes a
+    /// snap target for that chord alone. Snapping a top node onto a point that
+    /// plainly belongs to the bottom chord is what the shared-station model used
+    /// to do, and it is not what anyone means by snapping.
+    /// </summary>
+    private static void AssignToNearerChord(
+        Curve top,
+        Curve bottom,
+        double topLength,
+        double bottomLength,
+        Point3d point,
+        List<double> topTargets,
+        List<double> bottomTargets)
     {
         top.ClosestPoint(point, out double topParam);
         bottom.ClosestPoint(point, out double bottomParam);
@@ -220,9 +258,10 @@ public static class Truss2DGenerator
         double toTop = top.PointAt(topParam).DistanceTo(point);
         double toBottom = bottom.PointAt(bottomParam).DistanceTo(point);
 
-        return toTop <= toBottom
-            ? LengthTo(top, topParam) / topLength
-            : LengthTo(bottom, bottomParam) / bottomLength;
+        if (toTop <= toBottom)
+            topTargets.Add(LengthTo(top, topParam) / topLength);
+        else
+            bottomTargets.Add(LengthTo(bottom, bottomParam) / bottomLength);
     }
 
     private static double LengthTo(Curve curve, double parameter)
