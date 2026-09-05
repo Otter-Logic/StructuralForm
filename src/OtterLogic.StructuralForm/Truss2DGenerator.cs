@@ -1,7 +1,7 @@
 using Rhino;
 using Rhino.Geometry;
 
-namespace OtterLogic.Core.StructuralForm;
+namespace OtterLogic.StructuralForm;
 
 /// <summary>
 /// Builds a 2D truss between a top and a bottom chord.

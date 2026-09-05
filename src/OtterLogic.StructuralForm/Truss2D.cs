@@ -1,6 +1,6 @@
 using Rhino.Geometry;
 
-namespace OtterLogic.Core.StructuralForm;
+namespace OtterLogic.StructuralForm;
 
 /// <summary>
 /// A generated truss: paired chord nodes plus the members between them.

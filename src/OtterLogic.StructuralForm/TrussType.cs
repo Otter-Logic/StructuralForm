@@ -1,4 +1,4 @@
-namespace OtterLogic.Core.StructuralForm;
+namespace OtterLogic.StructuralForm;
 
 /// <summary>
 /// Web bracing patterns for a 2D truss.

@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using Rhino.Runtime.InProcess;
 using Xunit;
 
-namespace OtterLogic.Core.Tests;
+namespace OtterLogic.StructuralForm.Tests;
 
 /// <summary>
 /// Boots the installed Rhino in-process so tests can build real curves.

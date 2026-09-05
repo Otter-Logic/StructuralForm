@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>OtterLogic.Core.Tests</RootNamespace>
+    <RootNamespace>OtterLogic.StructuralForm.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
 
@@ -28,7 +28,7 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
 
-    <ProjectReference Include="..\..\src\OtterLogic.Core\OtterLogic.Core.csproj" />
+    <ProjectReference Include="..\..\src\OtterLogic.StructuralForm\OtterLogic.StructuralForm.csproj" />
   </ItemGroup>
 
 </Project>

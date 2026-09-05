@@ -1,6 +1,6 @@
 using Rhino.Geometry;
 
-namespace OtterLogic.Core.StructuralForm;
+namespace OtterLogic.StructuralForm;
 
 /// <summary>
 /// Inputs to <see cref="Truss2DGenerator"/> other than the two chords.

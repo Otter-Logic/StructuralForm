@@ -1,8 +1,8 @@
-using OtterLogic.Core.StructuralForm;
+using OtterLogic.StructuralForm;
 using Rhino.Geometry;
 using Xunit;
 
-namespace OtterLogic.Core.Tests;
+namespace OtterLogic.StructuralForm.Tests;
 
 [Collection(RhinoCollection.Name)]
 public class Truss2DGeneratorTests

@@ -1,6 +1,6 @@
 using Rhino.Geometry;
 
-namespace OtterLogic.Core.StructuralForm;
+namespace OtterLogic.StructuralForm;
 
 /// <summary>What part of the truss a member belongs to.</summary>
 public enum TrussMemberRole

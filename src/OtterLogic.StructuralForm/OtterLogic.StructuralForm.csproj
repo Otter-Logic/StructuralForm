@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OtterLogic.StructuralForm</RootNamespace>
+    <AssemblyName>OtterLogic.StructuralForm</AssemblyName>
+    <!-- A domain: its own types and its own logic, together. No UI, no
+         Grasshopper, and no dependency on any sibling domain. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RhinoCommon" Version="$(RhinoVersion)" ExcludeAssets="runtime" />
+    <ProjectReference Include="..\OtterLogic.Core\OtterLogic.Core.csproj" />
+  </ItemGroup>
+
+</Project>
