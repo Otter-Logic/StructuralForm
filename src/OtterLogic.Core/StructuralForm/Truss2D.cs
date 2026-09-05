@@ -17,13 +17,17 @@ public sealed class Truss2D
         IReadOnlyList<Point3d> bottomNodes,
         IReadOnlyList<TrussMember> members,
         TrussType type,
-        bool isPlanar)
+        bool isPlanar,
+        bool chordsMeetAtStart,
+        bool chordsMeetAtEnd)
     {
         TopNodes = topNodes;
         BottomNodes = bottomNodes;
         Members = members;
         Type = type;
         IsPlanar = isPlanar;
+        ChordsMeetAtStart = chordsMeetAtStart;
+        ChordsMeetAtEnd = chordsMeetAtEnd;
     }
 
     public IReadOnlyList<Point3d> TopNodes { get; }
@@ -37,6 +41,16 @@ public sealed class Truss2D
     /// mistake, not an error — but front-ends should say so.
     /// </summary>
     public bool IsPlanar { get; }
+
+    /// <summary>
+    /// True when the two chords converge to a shared point at station 0. No end
+    /// post is generated there — it would collapse onto that point and sit on
+    /// top of the chords themselves.
+    /// </summary>
+    public bool ChordsMeetAtStart { get; }
+
+    /// <summary>As <see cref="ChordsMeetAtStart"/>, for the far end.</summary>
+    public bool ChordsMeetAtEnd { get; }
 
     /// <summary>Number of bays between chord nodes.</summary>
     public int PanelCount => TopNodes.Count - 1;
