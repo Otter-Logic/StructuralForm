@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OtterLogic.StructuralForm.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!-- Only Rhino ships a .NET 7 runtime; the test host rolls forward to whatever
+         runtime is installed so `dotnet test` works outside Rhino. -->
+    <RollForward>LatestMajor</RollForward>
+
+    <!-- Rhino.Inside 7.0.0 still declares Rhino 7 dependencies, but the resolver
+         itself is version-agnostic: it reads the registry and loads whatever
+         Rhino is installed. The version-conflict and framework warnings that
+         come with it are noise. -->
+    <NoWarn>$(NoWarn);NU1608;NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- No ExcludeAssets here: the test host genuinely needs RhinoCommon.dll copied.
+         Struct maths (Point3d, Vector3d) runs fine without Rhino being open.
+         Anything touching Mesh or Brep needs Rhino booted headless - add the
+         Rhino.Testing package for that. -->
+    <PackageReference Include="RhinoCommon" Version="$(RhinoVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="Rhino.Inside" Version="7.0.0" />
+
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+
+    <ProjectReference Include="..\..\src\OtterLogic.StructuralForm\OtterLogic.StructuralForm.csproj" />
+  </ItemGroup>
+
+</Project>

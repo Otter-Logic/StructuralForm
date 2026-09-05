@@ -1,0 +1,27 @@
+# Normalise line endings on commit. Without this every commit prints a wall of
+# "LF will be replaced by CRLF" warnings, and the .rui and .csproj files churn
+# whenever they are touched from a different tool.
+* text=auto eol=lf
+
+# Windows tooling that is happier with CRLF.
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Rhino and Grasshopper files are binary; never let git rewrite them.
+*.3dm   binary
+*.3dmbak binary
+*.rhp   binary
+*.gha   binary
+*.gh    binary
+*.yak   binary
+
+# Assets and models.
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.onnx  binary
+
+# Generated, so keep them out of diffs and language stats.
+dist/**     linguist-generated=true
+*.slnx      text eol=lf

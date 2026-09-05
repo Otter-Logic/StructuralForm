@@ -1,0 +1,43 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Repo-wide paths -->
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+    <DistDir>$(RepoRoot)dist\</DistDir>
+
+    <!-- Rhino 8 on Windows runs .NET 7.
+
+         RhinoVersion is the 8.0 API baseline, deliberately: compiling against the
+         oldest supported API is what makes the plug-in usable on every Rhino 8,
+         because it is impossible to call something that did not exist yet.
+
+         McNeel only started shipping a net7.0 lib in the RhinoCommon package at
+         8.19, so 8.0 resolves through NuGet's net48 fallback and warns NU1701.
+         That warning is expected here rather than a problem to fix - the API is
+         the same managed surface either way. Verified by building against 8.0 and
+         loading the result in 8.34: plug-in, panel and component all fine.
+         Raising this pin raises the minimum Rhino your users need. -->
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <RhinoVersion>8.0.23304.9001</RhinoVersion>
+
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>true</ImplicitUsings>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+
+    <Version>0.1.0</Version>
+    <Authors>OtterLogic</Authors>
+    <Company>OtterLogic</Company>
+
+    <!-- SDK 10 building for net7.0: silence the out-of-support nag -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <!-- NETSDK1138: SDK 10 building for net7.0, which Rhino 8 supplies.
+         NU1701:      the net48 fallback described above.
+         CA1416:      fallout from that fallback. The analyzer stops believing
+                      our own assemblies are Windows-only and flags every call
+                      between them. A Rhino plug-in is Windows-only by
+                      construction, so there is nothing here to act on. -->
+    <NoWarn>$(NoWarn);NETSDK1138;NU1701;CA1416</NoWarn>
+  </PropertyGroup>
+
+</Project>

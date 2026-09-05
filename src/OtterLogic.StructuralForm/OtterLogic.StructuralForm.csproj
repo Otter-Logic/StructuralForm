@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OtterLogic.StructuralForm</RootNamespace>
+    <AssemblyName>OtterLogic.StructuralForm</AssemblyName>
+    <!-- A domain: its own types and its own logic, together. No UI, no
+         Grasshopper, and no dependency on any sibling domain. -->
+
+    <IsPackable>true</IsPackable>
+    <PackageId>OtterLogic.StructuralForm</PackageId>
+    <Description>Truss and structural form tools for Rhino, built on OtterLogic.Core.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Otter-Logic/StructuralForm</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Otter-Logic/StructuralForm</RepositoryUrl>
+    <PackageTags>rhino;rhino3d;grasshopper;computational-design</PackageTags>
+
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RhinoCommon" Version="$(RhinoVersion)" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!-- A sibling checkout of Core wins; the published package is the
+       fallback. Clone the repos side by side and the inner loop is unchanged;
+       CI has no siblings, so it builds against the published package. -->
+  <Choose>
+    <When Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\Core\src\OtterLogic.Core\OtterLogic.Core.csproj')">
+      <ItemGroup>
+        <ProjectReference Include="..\..\..\Core\src\OtterLogic.Core\OtterLogic.Core.csproj" />
+      </ItemGroup>
+    </When>
+    <Otherwise>
+      <ItemGroup>
+        <PackageReference Include="OtterLogic.Core" Version="[$(Version)]" />
+      </ItemGroup>
+    </Otherwise>
+  </Choose>
+
+</Project>
