@@ -15,6 +15,13 @@ public sealed record Truss2DOptions
     /// <summary>Web bracing pattern.</summary>
     public TrussType Type { get; init; } = TrussType.Warren;
 
+    /// <summary>
+    /// Mirror every diagonal within its own panel. Pratt becomes Howe, and the
+    /// Warren zigzag starts the other way up. Patterns with no diagonals to
+    /// mirror — Vierendeel — and symmetric ones — cross-braced — are unaffected.
+    /// </summary>
+    public bool Flip { get; init; }
+
     /// <summary>Close the truss with a post at each end.</summary>
     public bool GenerateEndPosts { get; init; } = true;
 

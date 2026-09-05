@@ -91,8 +91,8 @@ public class Truss2DGeneratorTests
     [InlineData(TrussType.WarrenWithVerticals, 11)]   // plus 5 interior verticals
     [InlineData(TrussType.Pratt, 11)]
     [InlineData(TrussType.Howe, 11)]
-    [InlineData(TrussType.Vertical, 5)]               // interior verticals only
-    [InlineData(TrussType.CrossBraced, 12)]           // both diagonals per panel
+    [InlineData(TrussType.Vierendeel, 5)]             // interior verticals only
+    [InlineData(TrussType.CrossBraced, 17)]           // both diagonals per panel, plus 5 verticals
     public void Web_member_counts_match_the_pattern(TrussType type, int expected)
     {
         Truss2D truss = Build(type);
@@ -252,6 +252,67 @@ public class Truss2DGeneratorTests
     {
         Assert.Throws<ArgumentException>(() => Truss2DGenerator.Generate(
             StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = -1 }));
+    }
+
+    // ---- flip --------------------------------------------------------------
+
+    /// <summary>
+    /// Order-independent key for a member, so the same brace drawn either way
+    /// round compares equal.
+    /// </summary>
+    private static string Key(Line line)
+    {
+        static string Corner(Point3d p) => $"{p.X:F4},{p.Y:F4},{p.Z:F4}";
+
+        string from = Corner(line.From);
+        string to = Corner(line.To);
+        return string.CompareOrdinal(from, to) <= 0 ? from + "|" + to : to + "|" + from;
+    }
+
+    private static HashSet<string> WebKeys(TrussType type, bool flip)
+        => Truss2DGenerator.Generate(
+                StraightChord(Depth), StraightChord(0),
+                new Truss2DOptions { Type = type, Divisions = 6, Flip = flip })
+            .Web.Select(Key)
+            .ToHashSet();
+
+    [Fact]
+    public void Flipping_Pratt_gives_Howe()
+    {
+        Assert.True(WebKeys(TrussType.Pratt, flip: true).SetEquals(WebKeys(TrussType.Howe, flip: false)));
+    }
+
+    [Fact]
+    public void Flipping_Howe_gives_Pratt()
+    {
+        Assert.True(WebKeys(TrussType.Howe, flip: true).SetEquals(WebKeys(TrussType.Pratt, flip: false)));
+    }
+
+    [Fact]
+    public void Flipping_Warren_changes_the_bracing_without_changing_the_count()
+    {
+        var upright = WebKeys(TrussType.Warren, flip: false);
+        var flipped = WebKeys(TrussType.Warren, flip: true);
+
+        Assert.Equal(upright.Count, flipped.Count);
+        Assert.False(upright.SetEquals(flipped));
+    }
+
+    [Theory]
+    [InlineData(TrussType.CrossBraced)]   // both diagonals already drawn
+    [InlineData(TrussType.Vierendeel)]    // no diagonals to mirror
+    public void Flip_is_a_no_op_for_symmetric_patterns(TrussType type)
+    {
+        Assert.True(WebKeys(type, flip: false).SetEquals(WebKeys(type, flip: true)));
+    }
+
+    [Fact]
+    public void Cross_bracing_includes_the_interior_verticals()
+    {
+        Truss2D truss = Build(TrussType.CrossBraced);
+
+        int verticals = truss.Web.Count(l => Math.Abs(l.Direction.X) < 1e-9);
+        Assert.Equal(truss.PanelCount - 1, verticals);
     }
 
     // ---- chords that meet at an end ---------------------------------------

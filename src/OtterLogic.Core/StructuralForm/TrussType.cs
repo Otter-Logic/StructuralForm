@@ -22,9 +22,12 @@ public enum TrussType
     /// <summary>Verticals throughout, diagonals sloping up toward mid-span — Pratt mirrored.</summary>
     Howe = 3,
 
-    /// <summary>Posts only, no diagonals. A Vierendeel layout.</summary>
-    Vertical = 4,
+    /// <summary>
+    /// Posts only, no diagonals. Carries load through rigid joints and bending
+    /// rather than triangulation, so the panels stay open.
+    /// </summary>
+    Vierendeel = 4,
 
-    /// <summary>Both diagonals in every panel.</summary>
+    /// <summary>Both diagonals in every panel, plus a vertical at each interior node.</summary>
     CrossBraced = 5,
 }

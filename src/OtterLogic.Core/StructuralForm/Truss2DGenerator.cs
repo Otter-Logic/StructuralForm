@@ -301,14 +301,21 @@ public static class Truss2DGenerator
             Add(bottomOffset + i, bottomOffset + i + 1, bottomNodes[i], bottomNodes[i + 1], TrussMemberRole.BottomChord);
         }
 
-        bool verticals = options.Type is TrussType.Vertical
+        bool verticals = options.Type is TrussType.Vierendeel
             or TrussType.WarrenWithVerticals
             or TrussType.Pratt
-            or TrussType.Howe;
+            or TrussType.Howe
+            or TrussType.CrossBraced;
 
         if (verticals)
             for (int i = 1; i < panels; i++)
                 AddVertical(i);
+
+        // Flip mirrors each diagonal within its own panel, which is the same as
+        // swapping which way the two helpers run. Cross-braced draws both, so it
+        // comes out identical either way.
+        Action<int> down = options.Flip ? AddUp : AddDown;
+        Action<int> up = options.Flip ? AddDown : AddUp;
 
         double midpoint = panels / 2.0;
 
@@ -316,28 +323,28 @@ public static class Truss2DGenerator
         {
             switch (options.Type)
             {
-                case TrussType.Vertical:
+                case TrussType.Vierendeel:
                     break;
 
                 // A continuous zigzag: alternating panels flip the diagonal.
                 case TrussType.Warren:
                 case TrussType.WarrenWithVerticals:
-                    if (i % 2 == 0) AddDown(i); else AddUp(i);
+                    if (i % 2 == 0) down(i); else up(i);
                     break;
 
                 // Diagonals fall toward mid-span, mirrored about it.
                 case TrussType.Pratt:
-                    if (i < midpoint) AddDown(i); else AddUp(i);
+                    if (i < midpoint) down(i); else up(i);
                     break;
 
                 // Pratt mirrored: diagonals rise toward mid-span.
                 case TrussType.Howe:
-                    if (i < midpoint) AddUp(i); else AddDown(i);
+                    if (i < midpoint) up(i); else down(i);
                     break;
 
                 case TrussType.CrossBraced:
-                    AddDown(i);
-                    AddUp(i);
+                    down(i);
+                    up(i);
                     break;
 
                 default:
