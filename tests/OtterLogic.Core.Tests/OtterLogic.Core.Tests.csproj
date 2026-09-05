@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OtterLogic.Core.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!-- Only Rhino ships a .NET 7 runtime; the test host rolls forward to whatever
+         runtime is installed so `dotnet test` works outside Rhino. -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- No ExcludeAssets here: the test host genuinely needs RhinoCommon.dll copied.
+         Struct maths (Point3d, Vector3d) runs fine without Rhino being open.
+         Anything touching Mesh or Brep needs Rhino booted headless - add the
+         Rhino.Testing package for that. -->
+    <PackageReference Include="RhinoCommon" Version="$(RhinoVersion)" />
+
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+
+    <ProjectReference Include="..\..\src\OtterLogic.Core\OtterLogic.Core.csproj" />
+  </ItemGroup>
+
+</Project>

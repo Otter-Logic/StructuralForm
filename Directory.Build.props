@@ -1,0 +1,27 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Repo-wide paths -->
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+    <DistDir>$(RepoRoot)dist\</DistDir>
+
+    <!-- Rhino 8 on Windows runs .NET 7. Pinned to the 8.0 API baseline so the
+         build runs on any Rhino 8.x, not just the one installed here. -->
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <RhinoVersion>8.34.26223.11001</RhinoVersion>
+
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>true</ImplicitUsings>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+
+    <Version>0.1.0</Version>
+    <Authors>OtterLogic</Authors>
+    <Company>OtterLogic</Company>
+
+    <!-- SDK 10 building for net7.0: silence the out-of-support nag -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
+  </PropertyGroup>
+
+</Project>

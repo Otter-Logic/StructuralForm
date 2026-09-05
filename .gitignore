@@ -1,0 +1,29 @@
+# Build
+bin/
+obj/
+dist/
+*.user
+*.suo
+.vs/
+
+# Rhino / Grasshopper
+*.rhl
+*.3dmbak
+*.ghx.bak
+
+# Yak
+*.yak
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+python/datasets/*
+!python/datasets/.gitkeep
+
+# ML artefacts (keep exported models, drop checkpoints)
+*.ckpt
+*.pt
+*.pth
