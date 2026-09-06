@@ -79,6 +79,35 @@ public class Truss2DGeneratorTests
         Assert.Equal(4.0, truss.TopNodes[1].X, 6);
     }
 
+    /// <summary>
+    /// A snap point is projected onto the chord with no distance cutoff, so how
+    /// far away it sits sideways makes no difference at all.
+    /// <para>
+    /// This is what lets one run of the Rhino command hand the same points to a
+    /// whole bay of trusses and get a node in the same place on every one of
+    /// them. Put a cutoff here and that stops working.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(20.0)]
+    [InlineData(500.0)]
+    public void A_snap_point_reaches_a_chord_however_far_away_it_is(double offset)
+    {
+        Curve top = new LineCurve(new Point3d(0, offset, Depth), new Point3d(Span, offset, Depth));
+        Curve bottom = new LineCurve(new Point3d(0, offset, 0), new Point3d(Span, offset, 0));
+
+        Truss2D truss = Truss2DGenerator.Generate(top, bottom, new Truss2DOptions
+        {
+            Divisions = 4,
+            AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },   // beside the y=0 truss
+        });
+
+        // Projected square onto the chord, so it lands at x = 5 whatever the
+        // offset - not at a proportion along it, and not ignored when distant.
+        Assert.Contains(truss.TopNodes, n => Math.Abs(n.X - 5.0) < 1e-6);
+    }
+
     [Fact]
     public void A_bare_line_with_no_spacing_gives_a_single_panel()
     {
@@ -375,8 +404,77 @@ public class Truss2DGeneratorTests
     {
         Truss2D truss = Build(TrussType.CrossBraced);
 
-        int verticals = truss.Web.Count(l => Math.Abs(l.Direction.X) < 1e-9);
-        Assert.Equal(truss.PanelCount - 1, verticals);
+        Assert.Equal(truss.PanelCount - 1, truss.Verticals.Count());
+        Assert.Equal(2 * truss.PanelCount, truss.Diagonals.Count());
+    }
+
+    /// <summary>
+    /// The roles partition the web, and they agree with the geometry: on a
+    /// parallel-chord truss a vertical member is the one with no run.
+    /// </summary>
+    [Theory]
+    [InlineData(TrussType.Warren)]
+    [InlineData(TrussType.WarrenWithVerticals)]
+    [InlineData(TrussType.Pratt)]
+    [InlineData(TrussType.Howe)]
+    [InlineData(TrussType.Vierendeel)]
+    [InlineData(TrussType.CrossBraced)]
+    public void Verticals_and_diagonals_partition_the_web(TrussType type)
+    {
+        Truss2D truss = Build(type);
+
+        Assert.Equal(truss.Web.Count(), truss.Verticals.Count() + truss.Diagonals.Count());
+        Assert.All(truss.Verticals, l => Assert.Equal(0.0, l.Direction.X, 9));
+        Assert.All(truss.Diagonals, l => Assert.NotEqual(0.0, Math.Round(l.Direction.X, 9)));
+    }
+
+    // ---- what the front-ends read off the result ---------------------------
+
+    [Theory]
+    [InlineData(TrussMemberRole.TopChord, "Top chord")]
+    [InlineData(TrussMemberRole.BottomChord, "Bottom chord")]
+    [InlineData(TrussMemberRole.Vertical, "Vertical")]
+    [InlineData(TrussMemberRole.Diagonal, "Diagonal")]
+    [InlineData(TrussMemberRole.EndPost, "End post")]
+    public void Roles_name_themselves_the_same_way_for_every_front_end(TrussMemberRole role, string expected)
+    {
+        Assert.Equal(expected, role.DisplayName());
+    }
+
+    [Fact]
+    public void A_parallel_chord_truss_has_a_distinct_node_for_every_node()
+    {
+        Truss2D truss = Build(TrussType.Warren);
+        Assert.Equal(truss.Nodes.Count, truss.DistinctNodes.Count);
+    }
+
+    [Fact]
+    public void The_truss_says_nothing_when_there_is_nothing_to_say()
+    {
+        Assert.Empty(Build(TrussType.Warren).Notes);
+    }
+
+    [Fact]
+    public void A_warped_truss_says_so()
+    {
+        Truss2D truss = Truss2DGenerator.Generate(
+            StraightChord(Depth),
+            new LineCurve(new Point3d(0, 5, 0), new Point3d(Span, 0, 0)),   // out of the top chord's plane
+            new Truss2DOptions { Divisions = 4 });
+
+        Assert.False(truss.IsPlanar);
+        Assert.Contains(truss.Notes, n => n.Level == TrussNoteLevel.Warning);
+    }
+
+    [Fact]
+    public void An_undefined_truss_type_is_rejected_before_anything_is_built()
+    {
+        var options = new Truss2DOptions { Type = (TrussType)99, Divisions = 4 };
+
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => Truss2DGenerator.Generate(StraightChord(Depth), StraightChord(0), options));
+
+        Assert.Contains("99", error.Message);
     }
 
     // ---- chords that meet at an end ---------------------------------------
@@ -414,6 +512,27 @@ public class Truss2DGeneratorTests
         Assert.True(truss.ChordsMeetAtStart);
         Assert.True(truss.ChordsMeetAtEnd);
         Assert.Empty(truss.EndPosts);
+
+        // The two apexes are one point each, however many nodes index them.
+        Assert.Equal(truss.Nodes.Count - 2, truss.DistinctNodes.Count);
+
+        // And that is worth saying out loud, since end posts were asked for.
+        TrussNote note = Assert.Single(truss.Notes);
+        Assert.Equal(TrussNoteLevel.Remark, note.Level);
+        Assert.Contains("both ends", note.Message);
+    }
+
+    [Fact]
+    public void Chords_that_meet_say_nothing_when_no_end_posts_were_wanted()
+    {
+        Point3d apex = new(0, 0, 1);
+
+        Truss2D truss = Truss2DGenerator.Generate(
+            TaperedChord(apex, Depth), TaperedChord(apex, 0),
+            new Truss2DOptions { Divisions = 4, GenerateEndPosts = false });
+
+        Assert.True(truss.ChordsMeetAtStart);
+        Assert.Empty(truss.Notes);
     }
 
     [Fact]
