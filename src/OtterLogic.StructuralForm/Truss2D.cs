@@ -30,17 +30,21 @@ public readonly record struct TrussNote(TrussNoteLevel Level, string Message);
 public sealed class Truss2D
 {
     internal Truss2D(
-        IReadOnlyList<Point3d> topNodes,
-        IReadOnlyList<Point3d> bottomNodes,
-        IReadOnlyList<TrussMember> members,
+        Point3d[] topNodes,
+        Point3d[] bottomNodes,
+        List<TrussMember> members,
         Truss2DOptions options,
         bool isPlanar,
         bool chordsMeetAtStart,
         bool chordsMeetAtEnd)
     {
-        TopNodes = topNodes;
-        BottomNodes = bottomNodes;
-        Members = members;
+        // Wrapped, not just typed as read-only. A generated truss is a result,
+        // and a result that a caller can reach into and edit is not one — an
+        // IReadOnlyList over a live array or list is a promise the type system
+        // does not keep, since the concrete type is one cast away.
+        TopNodes = Array.AsReadOnly(topNodes);
+        BottomNodes = Array.AsReadOnly(bottomNodes);
+        Members = members.AsReadOnly();
         Options = options;
         IsPlanar = isPlanar;
         ChordsMeetAtStart = chordsMeetAtStart;
@@ -104,7 +108,7 @@ public sealed class Truss2D
     /// other. Indices match <see cref="TrussMember.StartNode"/>, so this is the
     /// list to index into; <see cref="DistinctNodes"/> is the one to draw.
     /// </summary>
-    public IReadOnlyList<Point3d> Nodes => TopNodes.Concat(BottomNodes).ToArray();
+    public IReadOnlyList<Point3d> Nodes => Array.AsReadOnly(TopNodes.Concat(BottomNodes).ToArray());
 
     /// <summary>
     /// The nodes with coincident ones merged — the list worth handing to a
@@ -126,7 +130,7 @@ public sealed class Truss2D
                 if (!kept.Any(k => k.DistanceTo(node) <= Options.SnapTolerance))
                     kept.Add(node);
 
-            return kept;
+            return kept.AsReadOnly();
         }
     }
 
@@ -158,7 +162,7 @@ public sealed class Truss2D
                         ? "The chords meet at both ends, so no end posts were generated."
                         : "The chords meet at one end, so only one end post was generated."));
 
-            return notes;
+            return notes.AsReadOnly();
         }
     }
 

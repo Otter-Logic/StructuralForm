@@ -234,8 +234,43 @@ public class Truss2DGeneratorTests
 
         Assert.Equal(4, truss.PanelCount);                 // count is unchanged
         Assert.Equal(3.4, truss.TopNodes[1].X, 6);         // but the station moved
-        Assert.Equal(6.0, truss.TopNodes[2].X, 6);         // and its neighbours did not
-        Assert.Equal(3.0, truss.BottomNodes[1].X, 6);      // nor did the other chord
+        Assert.Equal(3.4, truss.BottomNodes[1].X, 6);      // and the truss steps with it
+
+        // What is left of the chord is divided evenly between the vertex and
+        // the end, rather than the two panels around it going short and long.
+        Assert.Equal(3.4 + (Span - 3.4) / 3.0, truss.TopNodes[2].X, 6);
+        Assert.Equal(3.4 + (Span - 3.4) * 2.0 / 3.0, truss.TopNodes[3].X, 6);
+    }
+
+    /// <summary>
+    /// The point of spreading: a snapped node is a fixed point, and what lies
+    /// between two fixed points is divided evenly. Anything else leaves one
+    /// short panel and one long one against an otherwise regular truss.
+    /// </summary>
+    [Fact]
+    public void Everything_after_a_snapped_node_is_divided_evenly_again()
+    {
+        // Six panels put stations at x = 2, 4, 6, 8, 10. The vertex at 2.5 is
+        // within reach of the first, so it anchors there.
+        Truss2D truss = Truss2DGenerator.Generate(
+            PolylineChord(Depth, 2.5), StraightChord(0), new Truss2DOptions { Divisions = 6 });
+
+        Assert.Equal(6, truss.PanelCount);
+        Assert.Equal(2.5, truss.TopNodes[1].X, 6);
+
+        // 2.5 to 12 in five equal panels of 1.9.
+        for (int i = 1; i <= 6; i++)
+            Assert.Equal(2.5 + 1.9 * (i - 1), truss.TopNodes[i].X, 6);
+    }
+
+    [Fact]
+    public void A_chord_with_nothing_to_snap_to_is_spread_evenly_end_to_end()
+    {
+        Truss2D truss = Truss2DGenerator.Generate(
+            StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = 4 });
+
+        for (int i = 0; i <= 4; i++)
+            Assert.Equal(i * Span / 4.0, truss.TopNodes[i].X, 6);
     }
 
     [Fact]
@@ -284,29 +319,44 @@ public class Truss2DGeneratorTests
             StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = -1 }));
     }
 
-    // ---- each chord snaps on its own ---------------------------------------
+    // ---- the two chords step together --------------------------------------
 
+    /// <summary>
+    /// A panel point is where the whole truss steps, so a point belonging to
+    /// either chord gives both of them a node. Dividing each chord against only
+    /// its own points would put node <c>i</c> at a different plan position on
+    /// each and leave the member between them leaning.
+    /// </summary>
     [Fact]
-    public void Each_chord_snaps_to_its_own_points()
+    public void Both_chords_step_at_every_snap_point()
     {
         // Four panels put both chords at x = 0, 3, 6, 9, 12. The top chord has a
         // vertex near its second station, the bottom chord near its fourth.
         Truss2D truss = Truss2DGenerator.Generate(
-            PolylineChord(Depth, 3.4), PolylineChord(0, 8.0), new Truss2DOptions { Divisions = 4 });
+            PolylineChord(Depth, 3.4), PolylineChord(0, 8.0),
+            new Truss2DOptions { Divisions = 4, Type = TrussType.Vierendeel });
 
         Assert.Equal(4, truss.PanelCount);
 
-        Assert.Equal(3.4, truss.TopNodes[1].X, 6);         // top pulled to its vertex
-        Assert.Equal(3.0, truss.BottomNodes[1].X, 6);      // bottom unmoved there
+        // Both vertices anchor both chords, and the one station left over is
+        // spread between them.
+        double[] expected = { 0.0, 3.4, (3.4 + 8.0) / 2.0, 8.0, Span };
 
-        Assert.Equal(9.0, truss.TopNodes[3].X, 6);         // top unmoved here
-        Assert.Equal(8.0, truss.BottomNodes[3].X, 6);      // bottom pulled to its vertex
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i], truss.TopNodes[i].X, 6);
+            Assert.Equal(expected[i], truss.BottomNodes[i].X, 6);
+        }
+
+        Assert.All(truss.Verticals, line => Assert.Equal(0.0, line.Direction.X, 6));
     }
 
     [Fact]
-    public void A_picked_point_beside_one_chord_leaves_the_other_alone()
+    public void A_point_beside_one_chord_is_measured_there_but_moves_both()
     {
-        // The point sits just above the bottom chord, so it belongs to it.
+        // The point sits just above the bottom chord, so the bottom chord is
+        // what it is measured against — but the station it lands on is a plan
+        // position, and the truss steps there as a whole.
         Truss2D truss = Truss2DGenerator.Generate(
             StraightChord(Depth), StraightChord(0),
             new Truss2DOptions
@@ -316,11 +366,11 @@ public class Truss2DGeneratorTests
             });
 
         Assert.Equal(5.0, truss.BottomNodes[1].X, 6);
-        Assert.Equal(6.0, truss.TopNodes[1].X, 6);
+        Assert.Equal(5.0, truss.TopNodes[1].X, 6);
     }
 
     [Fact]
-    public void Chords_keep_matching_node_counts_when_they_snap_differently()
+    public void Chords_keep_matching_node_counts_however_much_they_snap()
     {
         Truss2D truss = Truss2DGenerator.Generate(
             PolylineChord(Depth, 2.6, 5.2, 9.4),
@@ -332,7 +382,7 @@ public class Truss2DGeneratorTests
     }
 
     [Fact]
-    public void Independently_snapped_chords_still_pair_by_index()
+    public void Snapped_chords_still_pair_by_index()
     {
         Truss2D truss = Truss2DGenerator.Generate(
             PolylineChord(Depth, 3.4), PolylineChord(0, 8.0),
@@ -448,6 +498,30 @@ public class Truss2DGeneratorTests
         Assert.Equal(truss.Nodes.Count, truss.DistinctNodes.Count);
     }
 
+    /// <summary>
+    /// A generated truss is a result, and a result nobody can edit behind your
+    /// back. Declaring the collections read-only is not enough on its own — an
+    /// <c>IReadOnlyList</c> over a live array or list is one cast away from
+    /// being writable — so this checks the wrapping, not just the signature.
+    /// </summary>
+    [Fact]
+    public void Nothing_can_reach_into_a_generated_truss_and_edit_it()
+    {
+        Truss2D truss = Build(TrussType.Warren);
+        TrussMember member = truss.Members[0];
+
+        Assert.Throws<NotSupportedException>(() => ((IList<TrussMember>)truss.Members).Add(member));
+        Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.TopNodes).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.BottomNodes).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.Nodes).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.DistinctNodes).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<TrussNote>)truss.Notes).Clear());
+
+        // The array the generator built is not the array handed out.
+        Assert.Null(truss.TopNodes as Point3d[]);
+        Assert.Null(truss.Members as List<TrussMember>);
+    }
+
     [Fact]
     public void The_truss_says_nothing_when_there_is_nothing_to_say()
     {
@@ -475,6 +549,66 @@ public class Truss2DGeneratorTests
             () => Truss2DGenerator.Generate(StraightChord(Depth), StraightChord(0), options));
 
         Assert.Contains("99", error.Message);
+    }
+
+    // ---- set out on plan ---------------------------------------------------
+
+    /// <summary>
+    /// The reason panels are measured in plan: a pitched chord is longer than
+    /// the level one below it, so dividing each along its own length staggers
+    /// the pairs and every vertical comes out leaning.
+    /// </summary>
+    [Fact]
+    public void Panels_are_set_out_on_plan_so_the_verticals_stand_up()
+    {
+        Curve top = new LineCurve(new Point3d(0, 0, 1), new Point3d(Span, 0, 5));
+
+        Truss2D truss = Truss2DGenerator.Generate(
+            top, StraightChord(0), new Truss2DOptions { Divisions = 6, Type = TrussType.Vierendeel });
+
+        for (int i = 0; i < truss.TopNodes.Count; i++)
+        {
+            Assert.Equal(i * Span / 6.0, truss.TopNodes[i].X, 6);       // even on plan
+            Assert.Equal(truss.TopNodes[i].X, truss.BottomNodes[i].X, 6);
+        }
+
+        // Which is the same as saying every vertical is vertical.
+        Assert.All(truss.Verticals, line => Assert.Equal(0.0, line.Direction.X, 6));
+    }
+
+    [Fact]
+    public void A_curved_chord_is_still_divided_evenly_on_plan()
+    {
+        var arc = new ArcCurve(new Arc(
+            new Point3d(0, 0, 1), new Point3d(Span / 2, 0, 4), new Point3d(Span, 0, 1)));
+
+        Truss2D truss = Truss2DGenerator.Generate(
+            arc, StraightChord(0), new Truss2DOptions { Divisions = 6, Type = TrussType.Vierendeel });
+
+        for (int i = 0; i < truss.TopNodes.Count; i++)
+            Assert.Equal(i * Span / 6.0, truss.TopNodes[i].X, 6);
+
+        Assert.All(truss.Verticals, line => Assert.Equal(0.0, line.Direction.X, 6));
+    }
+
+    /// <summary>
+    /// A truss standing in a plane the plan view looks along has no plan length
+    /// to divide, so it falls back to measuring along the chords themselves
+    /// rather than dividing by zero.
+    /// </summary>
+    [Fact]
+    public void A_truss_edge_on_in_plan_still_generates()
+    {
+        Curve top = new LineCurve(new Point3d(3, 4, 2), new Point3d(3, 4, 14));
+        Curve bottom = new LineCurve(new Point3d(5, 7, 2), new Point3d(5, 7, 14));
+
+        Truss2D truss = Truss2DGenerator.Generate(top, bottom, new Truss2DOptions { Divisions = 4 });
+
+        Assert.Equal(4, truss.PanelCount);
+        Assert.All(truss.TopNodes, n => Assert.True(n.IsValid));
+
+        for (int i = 0; i <= 4; i++)
+            Assert.Equal(2.0 + i * 3.0, truss.TopNodes[i].Z, 6);
     }
 
     // ---- chords that meet at an end ---------------------------------------

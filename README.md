@@ -9,15 +9,27 @@ A **domain**: it owns its types *and* its logic. `TrussType`, `Truss2DOptions`,
 
 ## Truss2D
 
-Nodes sit at *stations* — normalised arc-length positions along each chord.
-Each chord carries its own station list of the same length, so top node `i`
-always pairs with bottom node `i` and every web pattern reduces to index
-arithmetic, while the two chords stay free to place that node at different
-points along their own length.
+Nodes sit at *stations* — positions along the chords measured as a fraction of
+**plan** length, shared by both chords, so top node `i` and bottom node `i` sit
+at the same plan position and every web pattern reduces to index arithmetic.
 
-`Divisions` fixes the panel count up front; the stations are then **snapped**
-onto nearby snap points rather than adding to them. Reach is half a panel, and
-no two stations can claim the same point. Leave `Divisions` at zero and control
+Plan rather than along-the-chord because a pitched top chord is longer than the
+level bottom chord under it: divide each by its own length and node `i` lands a
+different distance along each, leaving every vertical leaning. Chords are
+converted to NURBS before projecting so a parameter means the same place on the
+chord and on its plan ruler — projecting an arc directly reparameterises it,
+which on a 12 m chord is a 24 mm error in every node. A chord edge-on in plan has
+no plan length to divide and measures along itself instead.
+
+`Divisions` fixes the panel count up front and lays it out evenly on plan. The
+stations then **snap** onto nearby points rather than adding to them — reach is
+half a panel, and no two stations can claim the same point — and whatever did not
+snap is **spread evenly between the ones that did**, so the panels either side of
+a snapped node do not come out short and long against an otherwise regular truss.
+
+Snap points anchor *both* chords. A point is measured against whichever chord it
+sits nearer to, since that decides where along the truss it lands, but a panel
+point is where the whole truss steps. Leave `Divisions` at zero and control
 inverts: every polyline vertex, curve kink and picked point becomes a node.
 
 Six bracing patterns — Warren, Warren with verticals, Pratt, Howe, Vierendeel
