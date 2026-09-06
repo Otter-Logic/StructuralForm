@@ -32,10 +32,11 @@ public sealed record Truss2DOptions
     public IReadOnlyList<Point3d> AdditionalSnapPoints { get; init; } = Array.Empty<Point3d>();
 
     /// <summary>
-    /// Number of panels to lay out evenly before snapping. This is the primary
-    /// driver: when set, it fixes how many verticals and diagonals there are,
-    /// and the resulting stations then migrate onto nearby snap points rather
-    /// than adding to them.
+    /// Number of panels, laid out evenly by <em>plan</em> distance before
+    /// snapping. This is the primary driver: when set, it fixes how many
+    /// verticals and diagonals there are, and the resulting stations then
+    /// migrate onto nearby snap points rather than adding to them — after which
+    /// whatever did not snap is spread evenly between the ones that did.
     /// <para>
     /// Zero — the default — hands control back to the geometry, and every
     /// detected point becomes a node in its own right.
@@ -44,10 +45,10 @@ public sealed record Truss2DOptions
     public int Divisions { get; init; }
 
     /// <summary>
-    /// Target panel spacing along the chords, in model units. An alternative way
-    /// to say <see cref="Divisions"/> when you care about panel length rather
-    /// than panel count; <see cref="Divisions"/> wins if both are set. Zero
-    /// leaves the panel count to the geometry.
+    /// Target panel spacing on plan, in model units. An alternative way to say
+    /// <see cref="Divisions"/> when you care about panel length rather than
+    /// panel count; <see cref="Divisions"/> wins if both are set. Zero leaves
+    /// the panel count to the geometry.
     /// </summary>
     public double SnapSpacing { get; init; }
 
