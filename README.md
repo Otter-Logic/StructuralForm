@@ -24,6 +24,26 @@ Six bracing patterns — Warren, Warren with verticals, Pratt, Howe, Vierendeel
 and cross-braced — with optional end posts and a flip that mirrors every
 diagonal within its own panel.
 
+Every member carries a `TrussMemberRole`: top chord, bottom chord, vertical,
+diagonal or end post. Verticals and diagonals are separate roles because they
+are specified separately, which is what lets a front-end sort a truss into
+section groups without inspecting geometry. `Truss2D.Web` returns both together
+for callers that do not care about the distinction, and `DisplayName()` gives the
+one spelling of each role that every front-end uses.
+
+The generated `Truss2D` answers the questions a front-end would otherwise have
+to work out for itself, so that two of them cannot come to different answers:
+
+| | |
+|---|---|
+| `Notes` | what is worth telling the user — a warped truss, a suppressed end post — with a level the host maps onto whatever it has |
+| `DistinctNodes` | the nodes with coincident ones merged, for drawing or baking; `Nodes` keeps the duplicates, since members index into it |
+| `Options` | what the truss was generated from, so "no end post here" can be told apart from "no end posts wanted" |
+
+`Truss2DGenerator` validates its own options and throws `ArgumentException` with
+the message to show. Front-ends are expected to catch it and display it, not to
+keep a second copy of the rules.
+
 ## Rules
 
 - Depends on [Core](https://github.com/Otter-Logic/Core) and nothing else. Never another domain, never an

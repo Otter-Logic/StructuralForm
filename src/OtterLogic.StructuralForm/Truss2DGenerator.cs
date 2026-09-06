@@ -51,6 +51,11 @@ public static class Truss2DGenerator
             throw new ArgumentException("Divisions cannot be negative.", nameof(options));
         if (options.SnapSpacing < 0.0)
             throw new ArgumentException("Snap spacing cannot be negative.", nameof(options));
+        if (!Enum.IsDefined(options.Type))
+            throw new ArgumentException(
+                $"Truss type {(int)options.Type} does not exist. Valid values are "
+                + $"0-{Enum.GetValues<TrussType>().Length - 1}.",
+                nameof(options));
 
         Curve top = topChord.DuplicateCurve();
         Curve bottom = AlignToStart(bottomChord.DuplicateCurve(), top);
@@ -78,7 +83,7 @@ public static class Truss2DGenerator
         var members = BuildMembers(topNodes, bottomNodes, options, meetAtStart, meetAtEnd);
         bool planar = IsPlanar(topNodes, bottomNodes, options.SnapTolerance);
 
-        return new Truss2D(topNodes, bottomNodes, members, options.Type, planar, meetAtStart, meetAtEnd);
+        return new Truss2D(topNodes, bottomNodes, members, options, planar, meetAtStart, meetAtEnd);
     }
 
     /// <summary>
@@ -330,9 +335,9 @@ public static class Truss2DGenerator
             members.Add(new TrussMember(new Line(start, end), role, startNode, endNode));
         }
 
-        void AddVertical(int i) => Add(i, bottomOffset + i, topNodes[i], bottomNodes[i], TrussMemberRole.Web);
-        void AddDown(int i) => Add(i, bottomOffset + i + 1, topNodes[i], bottomNodes[i + 1], TrussMemberRole.Web);
-        void AddUp(int i) => Add(bottomOffset + i, i + 1, bottomNodes[i], topNodes[i + 1], TrussMemberRole.Web);
+        void AddVertical(int i) => Add(i, bottomOffset + i, topNodes[i], bottomNodes[i], TrussMemberRole.Vertical);
+        void AddDown(int i) => Add(i, bottomOffset + i + 1, topNodes[i], bottomNodes[i + 1], TrussMemberRole.Diagonal);
+        void AddUp(int i) => Add(bottomOffset + i, i + 1, bottomNodes[i], topNodes[i + 1], TrussMemberRole.Diagonal);
 
         for (int i = 0; i < panels; i++)
         {
