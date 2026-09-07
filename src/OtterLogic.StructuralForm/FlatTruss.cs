@@ -27,13 +27,13 @@ public readonly record struct TrussNote(TrussNoteLevel Level, string Message);
 /// is what makes the web patterns expressible as index arithmetic.
 /// </para>
 /// </summary>
-public sealed class Truss2D
+public sealed class FlatTruss
 {
-    internal Truss2D(
+    internal FlatTruss(
         Point3d[] topNodes,
         Point3d[] bottomNodes,
         List<TrussMember> members,
-        Truss2DOptions options,
+        FlatTrussOptions options,
         bool isPlanar,
         bool chordsMeetAtStart,
         bool chordsMeetAtEnd)
@@ -61,7 +61,7 @@ public sealed class Truss2D
     /// missing end post is a suppression or simply not wanted — instead of every
     /// caller having to hold the options alongside the result.
     /// </summary>
-    public Truss2DOptions Options { get; }
+    public FlatTrussOptions Options { get; }
 
     public TrussType Type => Options.Type;
 
@@ -73,9 +73,14 @@ public sealed class Truss2D
     public bool IsPlanar { get; }
 
     /// <summary>
-    /// True when the two chords converge to a shared point at station 0. No end
-    /// post is generated there — it would collapse onto that point and sit on
-    /// top of the chords themselves.
+    /// True when the two chords converge to a shared point at station 0 — the
+    /// tip of a cantilever, or the apex of a tapered truss.
+    /// <para>
+    /// Neither an end post nor an end diagonal is generated there. The post
+    /// would collapse onto the shared point, and a diagonal out of it would run
+    /// to the next node along one chord or the other, which is that chord
+    /// member drawn twice.
+    /// </para>
     /// </summary>
     public bool ChordsMeetAtStart { get; }
 
