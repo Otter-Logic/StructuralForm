@@ -23,15 +23,10 @@ jobs:
         with:
           path: StructuralForm
 
-      # An explicit token: the default GITHUB_TOKEN only covers the repository
-      # running the workflow, so checking out another private repo in the org
-      # fails as "Not Found" - GitHub will not confirm that a repo you cannot
-      # read exists. Needs Contents: Read on Otter-Logic/Core.
       - uses: actions/checkout@v4
         with:
           repository: Otter-Logic/Core
           path: Core
-          token: ${{ secrets.OTTERLOGIC_REPOS_TOKEN }}
 
       - uses: actions/setup-dotnet@v4
         with:
