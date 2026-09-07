@@ -23,6 +23,21 @@ jobs:
         with:
           path: StructuralForm
 
+      # A missing secret is not an error in Actions - it interpolates to an
+      # empty string, checkout then authenticates as nobody, and GitHub answers
+      # 404 for a private repo it will not admit exists. That is indis-
+      # tinguishable from the repo being genuinely absent, so check it here and
+      # say which it is. Delete this step once the secret is settled.
+      - name: Check the cross-repo token is visible
+        env:
+          TOKEN: ${{ secrets.OTTERLOGIC_REPOS_TOKEN }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:TOKEN)) {
+            Write-Host "::error::OTTERLOGIC_REPOS_TOKEN is empty or not visible to this repository. Create it, and if it is an organisation secret check its repository access list. A fine-grained PAT also needs Contents: Read on the other OtterLogic repos, the organisation must permit fine-grained PATs, and the token may be sitting unapproved in the org's pending list."
+            exit 1
+          }
+          Write-Host "Token is visible to this workflow."
+
       # An explicit token: the default GITHUB_TOKEN only covers the repository
       # running the workflow, so checking out another private repo in the org
       # fails as "Not Found" - GitHub will not confirm that a repo you cannot
