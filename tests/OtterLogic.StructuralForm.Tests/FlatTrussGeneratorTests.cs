@@ -5,7 +5,7 @@ using Xunit;
 namespace OtterLogic.StructuralForm.Tests;
 
 [Collection(RhinoCollection.Name)]
-public class Truss2DGeneratorTests
+public class FlatTrussGeneratorTests
 {
     private const double Span = 12.0;
     private const double Depth = 2.0;
@@ -21,16 +21,16 @@ public class Truss2DGeneratorTests
         return new PolylineCurve(points);
     }
 
-    private static Truss2D Build(TrussType type, double spacing = 2.0, bool endPosts = true)
-        => Truss2DGenerator.Generate(
+    private static FlatTruss Build(TrussType type, double spacing = 2.0, bool endPosts = true)
+        => FlatTrussGenerator.Generate(
             StraightChord(Depth),
             StraightChord(0),
-            new Truss2DOptions { Type = type, SnapSpacing = spacing, GenerateEndPosts = endPosts });
+            new FlatTrussOptions { Type = type, SnapSpacing = spacing, GenerateEndPosts = endPosts });
 
     [Fact]
     public void Spacing_sets_the_panel_count()
     {
-        Truss2D truss = Build(TrussType.Warren, spacing: 2.0);
+        FlatTruss truss = Build(TrussType.Warren, spacing: 2.0);
 
         Assert.Equal(6, truss.PanelCount);                 // 12 / 2
         Assert.Equal(7, truss.TopNodes.Count);
@@ -40,10 +40,10 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Polyline_vertices_become_nodes_without_any_spacing()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             PolylineChord(Depth, 3.0, 7.0),
             StraightChord(0),
-            new Truss2DOptions { SnapSpacing = 0.0 });
+            new FlatTrussOptions { SnapSpacing = 0.0 });
 
         Assert.Equal(4, truss.TopNodes.Count);             // ends plus the two kinks
         Assert.Equal(3.0, truss.TopNodes[1].X, 6);
@@ -53,10 +53,10 @@ public class Truss2DGeneratorTests
     [Fact]
     public void A_vertex_on_either_chord_creates_a_node_on_both_when_geometry_drives()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth),
             PolylineChord(0, 5.0),
-            new Truss2DOptions { SnapSpacing = 0.0 });
+            new FlatTrussOptions { SnapSpacing = 0.0 });
 
         Assert.Equal(3, truss.TopNodes.Count);
         Assert.Equal(5.0, truss.TopNodes[1].X, 6);         // induced on the straight top chord
@@ -66,10 +66,10 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Additional_points_are_pulled_onto_the_nearer_chord()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth),
             StraightChord(0),
-            new Truss2DOptions
+            new FlatTrussOptions
             {
                 SnapSpacing = 0.0,
                 AdditionalSnapPoints = new[] { new Point3d(4.0, 0, 1.9) },   // nearest the top chord
@@ -97,7 +97,7 @@ public class Truss2DGeneratorTests
         Curve top = new LineCurve(new Point3d(0, offset, Depth), new Point3d(Span, offset, Depth));
         Curve bottom = new LineCurve(new Point3d(0, offset, 0), new Point3d(Span, offset, 0));
 
-        Truss2D truss = Truss2DGenerator.Generate(top, bottom, new Truss2DOptions
+        FlatTruss truss = FlatTrussGenerator.Generate(top, bottom, new FlatTrussOptions
         {
             Divisions = 4,
             AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },   // beside the y=0 truss
@@ -111,7 +111,7 @@ public class Truss2DGeneratorTests
     [Fact]
     public void A_bare_line_with_no_spacing_gives_a_single_panel()
     {
-        Truss2D truss = Build(TrussType.Warren, spacing: 0.0);
+        FlatTruss truss = Build(TrussType.Warren, spacing: 0.0);
         Assert.Equal(1, truss.PanelCount);
     }
 
@@ -124,14 +124,14 @@ public class Truss2DGeneratorTests
     [InlineData(TrussType.CrossBraced, 17)]           // both diagonals per panel, plus 5 verticals
     public void Web_member_counts_match_the_pattern(TrussType type, int expected)
     {
-        Truss2D truss = Build(type);
+        FlatTruss truss = Build(type);
         Assert.Equal(expected, truss.Web.Count());
     }
 
     [Fact]
     public void Chords_are_one_member_per_panel()
     {
-        Truss2D truss = Build(TrussType.Warren);
+        FlatTruss truss = Build(TrussType.Warren);
 
         Assert.Equal(truss.PanelCount, truss.TopChord.Count());
         Assert.Equal(truss.PanelCount, truss.BottomChord.Count());
@@ -165,8 +165,8 @@ public class Truss2DGeneratorTests
         Curve reversed = StraightChord(0);
         reversed.Reverse();
 
-        Truss2D truss = Truss2DGenerator.Generate(
-            StraightChord(Depth), reversed, new Truss2DOptions { SnapSpacing = 2.0 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), reversed, new FlatTrussOptions { SnapSpacing = 2.0 });
 
         // Aligned chords mean every end post is vertical rather than diagonal.
         Assert.All(truss.EndPosts, post => Assert.Equal(0.0, post.Direction.X, 6));
@@ -175,7 +175,7 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Members_carry_node_indices_that_resolve_against_Nodes()
     {
-        Truss2D truss = Build(TrussType.Pratt);
+        FlatTruss truss = Build(TrussType.Pratt);
         var nodes = truss.Nodes;
 
         Assert.All(truss.Members, member =>
@@ -196,8 +196,8 @@ public class Truss2DGeneratorTests
     {
         Curve twisted = new LineCurve(new Point3d(0, 0, 0), new Point3d(Span, 5, 0));
 
-        Truss2D truss = Truss2DGenerator.Generate(
-            StraightChord(Depth), twisted, new Truss2DOptions { SnapSpacing = 2.0 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), twisted, new FlatTrussOptions { SnapSpacing = 2.0 });
 
         Assert.False(truss.IsPlanar);
     }
@@ -207,8 +207,8 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Divisions_set_the_panel_count()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
-            StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = 5 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0), new FlatTrussOptions { Divisions = 5 });
 
         Assert.Equal(5, truss.PanelCount);
         Assert.Equal(6, truss.TopNodes.Count);
@@ -217,9 +217,9 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Divisions_win_over_spacing()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth), StraightChord(0),
-            new Truss2DOptions { Divisions = 3, SnapSpacing = 1.0 });   // spacing alone would give 12
+            new FlatTrussOptions { Divisions = 3, SnapSpacing = 1.0 });   // spacing alone would give 12
 
         Assert.Equal(3, truss.PanelCount);
     }
@@ -229,8 +229,8 @@ public class Truss2DGeneratorTests
     {
         // Four even stations would sit at x = 3, 6, 9. The vertex at 3.4 is
         // within half a panel of the first, so that station moves onto it.
-        Truss2D truss = Truss2DGenerator.Generate(
-            PolylineChord(Depth, 3.4), StraightChord(0), new Truss2DOptions { Divisions = 4 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 3.4), StraightChord(0), new FlatTrussOptions { Divisions = 4 });
 
         Assert.Equal(4, truss.PanelCount);                 // count is unchanged
         Assert.Equal(3.4, truss.TopNodes[1].X, 6);         // but the station moved
@@ -252,8 +252,8 @@ public class Truss2DGeneratorTests
     {
         // Six panels put stations at x = 2, 4, 6, 8, 10. The vertex at 2.5 is
         // within reach of the first, so it anchors there.
-        Truss2D truss = Truss2DGenerator.Generate(
-            PolylineChord(Depth, 2.5), StraightChord(0), new Truss2DOptions { Divisions = 6 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 2.5), StraightChord(0), new FlatTrussOptions { Divisions = 6 });
 
         Assert.Equal(6, truss.PanelCount);
         Assert.Equal(2.5, truss.TopNodes[1].X, 6);
@@ -266,8 +266,8 @@ public class Truss2DGeneratorTests
     [Fact]
     public void A_chord_with_nothing_to_snap_to_is_spread_evenly_end_to_end()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
-            StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = 4 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0), new FlatTrussOptions { Divisions = 4 });
 
         for (int i = 0; i <= 4; i++)
             Assert.Equal(i * Span / 4.0, truss.TopNodes[i].X, 6);
@@ -278,8 +278,8 @@ public class Truss2DGeneratorTests
     {
         // Stations at x = 6 only. The vertex at 1.0 is 5 units away, well beyond
         // the 3-unit reach, so nothing snaps.
-        Truss2D truss = Truss2DGenerator.Generate(
-            PolylineChord(Depth, 1.0), StraightChord(0), new Truss2DOptions { Divisions = 2 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 1.0), StraightChord(0), new FlatTrussOptions { Divisions = 2 });
 
         Assert.Equal(2, truss.PanelCount);
         Assert.Equal(6.0, truss.TopNodes[1].X, 6);
@@ -289,8 +289,8 @@ public class Truss2DGeneratorTests
     public void Two_stations_never_collapse_onto_the_same_point()
     {
         // Two vertices crowded around the single interior station at x = 6.
-        Truss2D truss = Truss2DGenerator.Generate(
-            PolylineChord(Depth, 5.8, 6.2), StraightChord(0), new Truss2DOptions { Divisions = 2 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 5.8, 6.2), StraightChord(0), new FlatTrussOptions { Divisions = 2 });
 
         Assert.Equal(2, truss.PanelCount);
         Assert.Equal(3, truss.TopNodes.Count);
@@ -300,9 +300,9 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Additional_points_snap_the_divisions_too()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth), StraightChord(0),
-            new Truss2DOptions
+            new FlatTrussOptions
             {
                 Divisions = 2,
                 AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },
@@ -315,8 +315,8 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Negative_divisions_are_rejected()
     {
-        Assert.Throws<ArgumentException>(() => Truss2DGenerator.Generate(
-            StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = -1 }));
+        Assert.Throws<ArgumentException>(() => FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0), new FlatTrussOptions { Divisions = -1 }));
     }
 
     // ---- the two chords step together --------------------------------------
@@ -332,9 +332,9 @@ public class Truss2DGeneratorTests
     {
         // Four panels put both chords at x = 0, 3, 6, 9, 12. The top chord has a
         // vertex near its second station, the bottom chord near its fourth.
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             PolylineChord(Depth, 3.4), PolylineChord(0, 8.0),
-            new Truss2DOptions { Divisions = 4, Type = TrussType.Vierendeel });
+            new FlatTrussOptions { Divisions = 4, Type = TrussType.Vierendeel });
 
         Assert.Equal(4, truss.PanelCount);
 
@@ -357,9 +357,9 @@ public class Truss2DGeneratorTests
         // The point sits just above the bottom chord, so the bottom chord is
         // what it is measured against — but the station it lands on is a plan
         // position, and the truss steps there as a whole.
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth), StraightChord(0),
-            new Truss2DOptions
+            new FlatTrussOptions
             {
                 Divisions = 2,
                 AdditionalSnapPoints = new[] { new Point3d(5.0, 0, 0.1) },
@@ -372,10 +372,10 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Chords_keep_matching_node_counts_however_much_they_snap()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             PolylineChord(Depth, 2.6, 5.2, 9.4),
             PolylineChord(0, 3.3, 6.4),
-            new Truss2DOptions { Divisions = 5 });
+            new FlatTrussOptions { Divisions = 5 });
 
         Assert.Equal(truss.TopNodes.Count, truss.BottomNodes.Count);
         Assert.Equal(6, truss.TopNodes.Count);
@@ -384,9 +384,9 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Snapped_chords_still_pair_by_index()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             PolylineChord(Depth, 3.4), PolylineChord(0, 8.0),
-            new Truss2DOptions { Divisions = 4, Type = TrussType.Vierendeel });
+            new FlatTrussOptions { Divisions = 4, Type = TrussType.Vierendeel });
 
         var nodes = truss.Nodes;
 
@@ -413,9 +413,9 @@ public class Truss2DGeneratorTests
     }
 
     private static HashSet<string> WebKeys(TrussType type, bool flip)
-        => Truss2DGenerator.Generate(
+        => FlatTrussGenerator.Generate(
                 StraightChord(Depth), StraightChord(0),
-                new Truss2DOptions { Type = type, Divisions = 6, Flip = flip })
+                new FlatTrussOptions { Type = type, Divisions = 6, Flip = flip })
             .Web.Select(Key)
             .ToHashSet();
 
@@ -452,7 +452,7 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Cross_bracing_includes_the_interior_verticals()
     {
-        Truss2D truss = Build(TrussType.CrossBraced);
+        FlatTruss truss = Build(TrussType.CrossBraced);
 
         Assert.Equal(truss.PanelCount - 1, truss.Verticals.Count());
         Assert.Equal(2 * truss.PanelCount, truss.Diagonals.Count());
@@ -471,7 +471,7 @@ public class Truss2DGeneratorTests
     [InlineData(TrussType.CrossBraced)]
     public void Verticals_and_diagonals_partition_the_web(TrussType type)
     {
-        Truss2D truss = Build(type);
+        FlatTruss truss = Build(type);
 
         Assert.Equal(truss.Web.Count(), truss.Verticals.Count() + truss.Diagonals.Count());
         Assert.All(truss.Verticals, l => Assert.Equal(0.0, l.Direction.X, 9));
@@ -494,7 +494,7 @@ public class Truss2DGeneratorTests
     [Fact]
     public void A_parallel_chord_truss_has_a_distinct_node_for_every_node()
     {
-        Truss2D truss = Build(TrussType.Warren);
+        FlatTruss truss = Build(TrussType.Warren);
         Assert.Equal(truss.Nodes.Count, truss.DistinctNodes.Count);
     }
 
@@ -507,7 +507,7 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Nothing_can_reach_into_a_generated_truss_and_edit_it()
     {
-        Truss2D truss = Build(TrussType.Warren);
+        FlatTruss truss = Build(TrussType.Warren);
         TrussMember member = truss.Members[0];
 
         Assert.Throws<NotSupportedException>(() => ((IList<TrussMember>)truss.Members).Add(member));
@@ -531,10 +531,10 @@ public class Truss2DGeneratorTests
     [Fact]
     public void A_warped_truss_says_so()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth),
             new LineCurve(new Point3d(0, 5, 0), new Point3d(Span, 0, 0)),   // out of the top chord's plane
-            new Truss2DOptions { Divisions = 4 });
+            new FlatTrussOptions { Divisions = 4 });
 
         Assert.False(truss.IsPlanar);
         Assert.Contains(truss.Notes, n => n.Level == TrussNoteLevel.Warning);
@@ -543,10 +543,10 @@ public class Truss2DGeneratorTests
     [Fact]
     public void An_undefined_truss_type_is_rejected_before_anything_is_built()
     {
-        var options = new Truss2DOptions { Type = (TrussType)99, Divisions = 4 };
+        var options = new FlatTrussOptions { Type = (TrussType)99, Divisions = 4 };
 
         ArgumentException error = Assert.Throws<ArgumentException>(
-            () => Truss2DGenerator.Generate(StraightChord(Depth), StraightChord(0), options));
+            () => FlatTrussGenerator.Generate(StraightChord(Depth), StraightChord(0), options));
 
         Assert.Contains("99", error.Message);
     }
@@ -563,8 +563,8 @@ public class Truss2DGeneratorTests
     {
         Curve top = new LineCurve(new Point3d(0, 0, 1), new Point3d(Span, 0, 5));
 
-        Truss2D truss = Truss2DGenerator.Generate(
-            top, StraightChord(0), new Truss2DOptions { Divisions = 6, Type = TrussType.Vierendeel });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            top, StraightChord(0), new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel });
 
         for (int i = 0; i < truss.TopNodes.Count; i++)
         {
@@ -582,8 +582,8 @@ public class Truss2DGeneratorTests
         var arc = new ArcCurve(new Arc(
             new Point3d(0, 0, 1), new Point3d(Span / 2, 0, 4), new Point3d(Span, 0, 1)));
 
-        Truss2D truss = Truss2DGenerator.Generate(
-            arc, StraightChord(0), new Truss2DOptions { Divisions = 6, Type = TrussType.Vierendeel });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            arc, StraightChord(0), new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel });
 
         for (int i = 0; i < truss.TopNodes.Count; i++)
             Assert.Equal(i * Span / 6.0, truss.TopNodes[i].X, 6);
@@ -602,7 +602,7 @@ public class Truss2DGeneratorTests
         Curve top = new LineCurve(new Point3d(3, 4, 2), new Point3d(3, 4, 14));
         Curve bottom = new LineCurve(new Point3d(5, 7, 2), new Point3d(5, 7, 14));
 
-        Truss2D truss = Truss2DGenerator.Generate(top, bottom, new Truss2DOptions { Divisions = 4 });
+        FlatTruss truss = FlatTrussGenerator.Generate(top, bottom, new FlatTrussOptions { Divisions = 4 });
 
         Assert.Equal(4, truss.PanelCount);
         Assert.All(truss.TopNodes, n => Assert.True(n.IsValid));
@@ -622,9 +622,9 @@ public class Truss2DGeneratorTests
     {
         Point3d apex = new(0, 0, 1);
 
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             TaperedChord(apex, Depth), TaperedChord(apex, 0),
-            new Truss2DOptions { Divisions = 4, GenerateEndPosts = true });
+            new FlatTrussOptions { Divisions = 4, GenerateEndPosts = true });
 
         Assert.True(truss.ChordsMeetAtStart);
         Assert.False(truss.ChordsMeetAtEnd);
@@ -640,8 +640,8 @@ public class Truss2DGeneratorTests
         var top = new PolylineCurve(new[] { left, new Point3d(Span / 2, 0, Depth), right });
         var bottom = new PolylineCurve(new[] { left, new Point3d(Span / 2, 0, 0), right });
 
-        Truss2D truss = Truss2DGenerator.Generate(
-            top, bottom, new Truss2DOptions { Divisions = 6, GenerateEndPosts = true });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            top, bottom, new FlatTrussOptions { Divisions = 6, GenerateEndPosts = true });
 
         Assert.True(truss.ChordsMeetAtStart);
         Assert.True(truss.ChordsMeetAtEnd);
@@ -661,9 +661,9 @@ public class Truss2DGeneratorTests
     {
         Point3d apex = new(0, 0, 1);
 
-        Truss2D truss = Truss2DGenerator.Generate(
+        FlatTruss truss = FlatTrussGenerator.Generate(
             TaperedChord(apex, Depth), TaperedChord(apex, 0),
-            new Truss2DOptions { Divisions = 4, GenerateEndPosts = false });
+            new FlatTrussOptions { Divisions = 4, GenerateEndPosts = false });
 
         Assert.True(truss.ChordsMeetAtStart);
         Assert.Empty(truss.Notes);
@@ -672,8 +672,8 @@ public class Truss2DGeneratorTests
     [Fact]
     public void Separated_chords_still_report_as_not_meeting()
     {
-        Truss2D truss = Truss2DGenerator.Generate(
-            StraightChord(Depth), StraightChord(0), new Truss2DOptions { Divisions = 4 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0), new FlatTrussOptions { Divisions = 4 });
 
         Assert.False(truss.ChordsMeetAtStart);
         Assert.False(truss.ChordsMeetAtEnd);
@@ -684,6 +684,288 @@ public class Truss2DGeneratorTests
     public void A_null_chord_is_rejected()
     {
         Assert.Throws<ArgumentNullException>(
-            () => Truss2DGenerator.Generate(null!, StraightChord(0)));
+            () => FlatTrussGenerator.Generate(null!, StraightChord(0)));
+    }
+
+    // ---- which snap points win --------------------------------------------
+
+    /// <summary>
+    /// The chords' own points come first. A truss whose node sits anywhere but
+    /// a kink has a chord member cutting that corner, so a vertex outranks a
+    /// picked point even when the picked point is nearer.
+    /// </summary>
+    [Fact]
+    public void A_chord_vertex_beats_a_picked_point_that_is_closer()
+    {
+        // Two panels put the one interior station at x = 6, reaching 3 either
+        // way. The picked point is 0.2 from it; the vertex is 0.5.
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 6.5), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 2,
+                AdditionalSnapPoints = new[] { new Point3d(5.8, 0, Depth) },
+            });
+
+        Assert.Equal(2, truss.PanelCount);
+        Assert.Equal(6.5, truss.TopNodes[1].X, 6);
+    }
+
+    /// <summary>
+    /// Once the vertices have taken what they can reach, the picked points are
+    /// offered whatever is left — they are not thrown away.
+    /// </summary>
+    [Fact]
+    public void A_picked_point_still_takes_a_station_no_vertex_wanted()
+    {
+        // Four panels: stations at x = 3, 6, 9. The vertex reaches the first,
+        // the picked point the second, and neither competes for the other.
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 3.4), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 4,
+                Type = TrussType.Vierendeel,
+                AdditionalSnapPoints = new[] { new Point3d(6.4, 0, Depth) },
+            });
+
+        Assert.Equal(4, truss.PanelCount);
+        Assert.Equal(3.4, truss.TopNodes[1].X, 6);
+        Assert.Equal(6.4, truss.TopNodes[2].X, 6);
+    }
+
+    [Fact]
+    public void A_picked_point_outside_the_snap_distance_is_ignored()
+    {
+        // The node the point would move sits at x = 6, one unit away from it.
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 2,
+                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },
+                SnapDistance = 0.5,
+            });
+
+        Assert.Equal(6.0, truss.TopNodes[1].X, 6);
+    }
+
+    [Fact]
+    public void A_picked_point_inside_the_snap_distance_still_snaps()
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 2,
+                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },
+                SnapDistance = 2.0,
+            });
+
+        Assert.Equal(5.0, truss.TopNodes[1].X, 6);
+    }
+
+    /// <summary>
+    /// The sphere is measured in 3D from the picked point to the node it would
+    /// move, not on plan: a point directly above a chord is as far away as it
+    /// looks, not on top of it.
+    /// </summary>
+    [Fact]
+    public void The_snap_distance_is_measured_in_three_dimensions()
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 2,
+                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth + 5.0) },
+                SnapDistance = 2.0,
+            });
+
+        Assert.Equal(6.0, truss.TopNodes[1].X, 6);
+    }
+
+    [Fact]
+    public void Only_the_nearest_of_several_picked_points_is_used()
+    {
+        // Both are within reach of the single station at x = 6: one a unit
+        // away, the other 0.4.
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 2,
+                AdditionalSnapPoints = new[]
+                {
+                    new Point3d(5.0, 0, Depth),
+                    new Point3d(6.4, 0, Depth),
+                },
+            });
+
+        Assert.Equal(2, truss.PanelCount);
+        Assert.Equal(3, truss.TopNodes.Count);
+        Assert.Equal(6.4, truss.TopNodes[1].X, 6);
+    }
+
+    /// <summary>
+    /// The distance limits which points snap; it never lets one move a node
+    /// past its neighbour, which would fold the truss over on itself.
+    /// </summary>
+    [Fact]
+    public void A_generous_snap_distance_still_cannot_reorder_the_stations()
+    {
+        // Six panels put stations every 2 units and let each move 1 either way,
+        // so a point at 6.5 is within reach of the station at 6 and no other,
+        // however wide the sphere around it is.
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 6,
+                AdditionalSnapPoints = new[] { new Point3d(6.5, 0, Depth) },
+                SnapDistance = 1000.0,
+            });
+
+        Assert.Equal(6, truss.PanelCount);
+        Assert.Equal(6.5, truss.TopNodes[3].X, 6);
+
+        for (int i = 1; i < truss.TopNodes.Count; i++)
+            Assert.True(truss.TopNodes[i].X > truss.TopNodes[i - 1].X);
+    }
+
+    [Fact]
+    public void Picked_points_are_stations_in_their_own_right_without_divisions()
+    {
+        // No division driver, so nothing is competing for a fixed node count
+        // and the priority rule has nothing to decide.
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            PolylineChord(Depth, 4.0), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 0,
+                AdditionalSnapPoints = new[] { new Point3d(9.0, 0, Depth) },
+            });
+
+        Assert.Equal(4, truss.TopNodes.Count);
+        Assert.Equal(4.0, truss.TopNodes[1].X, 6);
+        Assert.Equal(9.0, truss.TopNodes[2].X, 6);
+    }
+
+    [Fact]
+    public void A_negative_snap_distance_is_rejected()
+    {
+        Assert.Throws<ArgumentException>(() => FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions { Divisions = 4, SnapDistance = -1.0 }));
+    }
+
+    // ---- no diagonal where the chords meet --------------------------------
+
+    /// <summary>No member is drawn twice, whatever it is called.</summary>
+    private static void AssertNoMemberIsDrawnTwice(FlatTruss truss)
+    {
+        var keys = truss.Members.Select(m => Key(m.Line)).ToList();
+        Assert.Equal(keys.Count, keys.Distinct().Count());
+    }
+
+    [Fact]
+    public void No_end_diagonal_where_the_chords_meet_at_the_start()
+    {
+        Point3d apex = new(0, 0, 1);
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            TaperedChord(apex, Depth), TaperedChord(apex, 0),
+            new FlatTrussOptions { Divisions = 4, Type = TrussType.Warren });
+
+        Assert.True(truss.ChordsMeetAtStart);
+        Assert.Equal(4, truss.PanelCount);
+
+        // Four panels, but the one at the apex has no room for a diagonal: it
+        // would run from the shared point along a chord and double it.
+        Assert.Equal(3, truss.Diagonals.Count());
+        AssertNoMemberIsDrawnTwice(truss);
+    }
+
+    [Fact]
+    public void No_end_diagonal_where_the_chords_meet_at_the_end()
+    {
+        Point3d apex = new(Span, 0, 1);
+
+        Curve top = new LineCurve(new Point3d(0, 0, Depth), apex);
+        Curve bottom = new LineCurve(new Point3d(0, 0, 0), apex);
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            top, bottom, new FlatTrussOptions { Divisions = 4, Type = TrussType.Warren });
+
+        Assert.True(truss.ChordsMeetAtEnd);
+        Assert.False(truss.ChordsMeetAtStart);
+        Assert.Equal(3, truss.Diagonals.Count());
+        AssertNoMemberIsDrawnTwice(truss);
+    }
+
+    [Fact]
+    public void No_end_diagonals_at_either_end_when_both_ends_meet()
+    {
+        Point3d left = new(0, 0, 1);
+        Point3d right = new(Span, 0, 1);
+
+        var top = new PolylineCurve(new[] { left, new Point3d(Span / 2, 0, Depth), right });
+        var bottom = new PolylineCurve(new[] { left, new Point3d(Span / 2, 0, 0), right });
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            top, bottom, new FlatTrussOptions { Divisions = 6, Type = TrussType.Warren });
+
+        Assert.True(truss.ChordsMeetAtStart);
+        Assert.True(truss.ChordsMeetAtEnd);
+        Assert.Equal(6, truss.PanelCount);
+        Assert.Equal(4, truss.Diagonals.Count());   // six panels, both ends dropped
+        AssertNoMemberIsDrawnTwice(truss);
+    }
+
+    /// <summary>
+    /// Cross bracing draws both diagonals of a panel, and at a meeting end both
+    /// of them double a chord, so both go.
+    /// </summary>
+    [Fact]
+    public void Both_cross_braces_go_at_a_meeting_end()
+    {
+        Point3d apex = new(0, 0, 1);
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            TaperedChord(apex, Depth), TaperedChord(apex, 0),
+            new FlatTrussOptions { Divisions = 4, Type = TrussType.CrossBraced });
+
+        Assert.Equal(6, truss.Diagonals.Count());   // two per panel, less the apex panel
+        AssertNoMemberIsDrawnTwice(truss);
+    }
+
+    /// <summary>
+    /// Only the panel at the meeting end loses its diagonal. Verticals were
+    /// never drawn at the ends, and the chords themselves are untouched.
+    /// </summary>
+    [Fact]
+    public void Nothing_but_the_end_diagonal_is_dropped()
+    {
+        Point3d apex = new(0, 0, 1);
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            TaperedChord(apex, Depth), TaperedChord(apex, 0),
+            new FlatTrussOptions { Divisions = 4, Type = TrussType.Pratt });
+
+        Assert.Equal(4, truss.TopChord.Count());
+        Assert.Equal(4, truss.BottomChord.Count());
+        Assert.Equal(3, truss.Verticals.Count());   // interior only, as always
+        Assert.Single(truss.EndPosts);              // the open end
+    }
+
+    [Fact]
+    public void Separated_chords_keep_every_diagonal()
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions { Divisions = 4, Type = TrussType.Warren });
+
+        Assert.Equal(4, truss.Diagonals.Count());
+        AssertNoMemberIsDrawnTwice(truss);
     }
 }
