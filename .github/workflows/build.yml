@@ -4,9 +4,20 @@ name: build
 # has neither Rhino nor a licence for one, so `dotnet test` here would fail for
 # reasons unrelated to the change. Run tests locally; CI guards compilation.
 #
-# The sibling repos are checked out so the project references resolve. Once
-# the dependency is published on nuget.org, these extra checkouts can go and the
-# build will fall through to the pinned packages instead.
+# The sibling repo is checked out so the project reference resolves. Once the
+# dependency is published on nuget.org, this extra checkout can go and the build
+# will fall through to the pinned package instead.
+#
+# The cross-repo checkout authenticates with OTTER_CI_TOKEN, a PAT with read
+# access to Otter-Logic. The automatic GITHUB_TOKEN cannot do this: it is scoped
+# to the one repository running the job, so it can check this repo out but not
+# its siblings. That works today only because Core is public, and breaks the day
+# it turns private.
+#
+# The self-checkout deliberately does not use the PAT. GITHUB_TOKEN already
+# covers it, and checkout persists whatever token it is given into the local git
+# config, so handing the PAT to a step that does not need it only widens what a
+# later step could reach with it.
 
 on:
   push:
@@ -27,6 +38,7 @@ jobs:
         with:
           repository: Otter-Logic/Core
           path: Core
+          token: ${{ secrets.OTTER_CI_TOKEN }}
 
       - uses: actions/setup-dotnet@v4
         with:
