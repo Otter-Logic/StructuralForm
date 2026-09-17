@@ -36,7 +36,9 @@ public sealed class FlatTruss
         FlatTrussOptions options,
         bool isPlanar,
         bool chordsMeetAtStart,
-        bool chordsMeetAtEnd)
+        bool chordsMeetAtEnd,
+        int unusedSnapPoints,
+        int offChordSnapPoints)
     {
         // Wrapped, not just typed as read-only. A generated truss is a result,
         // and a result that a caller can reach into and edit is not one — an
@@ -49,6 +51,8 @@ public sealed class FlatTruss
         IsPlanar = isPlanar;
         ChordsMeetAtStart = chordsMeetAtStart;
         ChordsMeetAtEnd = chordsMeetAtEnd;
+        UnusedSnapPoints = unusedSnapPoints;
+        OffChordSnapPoints = offChordSnapPoints;
     }
 
     public IReadOnlyList<Point3d> TopNodes { get; }
@@ -86,6 +90,39 @@ public sealed class FlatTruss
 
     /// <summary>As <see cref="ChordsMeetAtStart"/>, for the far end.</summary>
     public bool ChordsMeetAtEnd { get; }
+
+    /// <summary>
+    /// How many of <see cref="FlatTrussOptions.AdditionalSnapPoints"/> were
+    /// discounted for not lying on either chord.
+    /// <para>
+    /// A snap point has to be on the top or bottom chord, within
+    /// <see cref="FlatTrussOptions.SnapTolerance"/>. One picked in mid-air is
+    /// not a near miss to be rescued — there is no defensible station for it —
+    /// but it is also the easiest mistake to make and the hardest to see, since
+    /// the truss comes out looking perfectly reasonable. Hence the count.
+    /// </para>
+    /// </summary>
+    public int OffChordSnapPoints { get; }
+
+    /// <summary>
+    /// How many snap points were on a chord, but did not end up moving a node.
+    /// <para>
+    /// Under <see cref="SnapStrictness.Relaxed"/> a point is used only if a
+    /// panel point can reach it, so one placed away from the regular spacing
+    /// does nothing at all. That is the rule working as intended, but it is
+    /// invisible on the geometry — the truss looks exactly as it would have
+    /// done had the point never been picked. Counting them is what lets a
+    /// front-end say so, and point at
+    /// <see cref="SnapStrictness.Strict"/> as the way to honour them.
+    /// </para>
+    /// <para>
+    /// Always zero under <see cref="SnapStrictness.Strict"/>, where every point
+    /// on a chord becomes a node, and when no division is set, where every
+    /// point is a node already. Points counted here are a separate matter from
+    /// <see cref="OffChordSnapPoints"/>, and have a different remedy.
+    /// </para>
+    /// </summary>
+    public int UnusedSnapPoints { get; }
 
     /// <summary>Number of bays between chord nodes.</summary>
     public int PanelCount => TopNodes.Count - 1;
@@ -151,12 +188,45 @@ public sealed class FlatTruss
     {
         get
         {
-            var notes = new List<TrussNote>(2);
+            var notes = new List<TrussNote>(4);
 
             if (!IsPlanar)
                 notes.Add(new TrussNote(
                     TrussNoteLevel.Warning,
                     "The two chords are not coplanar, so this truss is warped."));
+
+            // Off the chords entirely: a different mistake from the one below,
+            // and a different fix, so it gets its own words rather than being
+            // folded into a single count of things that did not work.
+            if (OffChordSnapPoints > 0)
+                notes.Add(new TrussNote(
+                    TrussNoteLevel.Warning,
+                    OffChordSnapPoints == 1
+                        ? "One snap point was discounted for not lying on either chord. "
+                          + "Snap points have to sit on the curves you picked."
+                        : $"{OffChordSnapPoints} snap points were discounted for not lying on "
+                          + "either chord. Snap points have to sit on the curves you picked."));
+
+            // A pick that changed nothing is the one failure here with no
+            // visible symptom, so it is the one most worth saying out loud.
+            if (UnusedSnapPoints > 0)
+                notes.Add(new TrussNote(
+                    TrussNoteLevel.Remark,
+                    UnusedSnapPoints == 1
+                        ? "One snap point was too far from a panel point to be used. "
+                          + "Set strictness to Strict to place a node on it."
+                        : $"{UnusedSnapPoints} snap points were too far from a panel point to be "
+                          + "used. Set strictness to Strict to place a node on each of them."));
+
+            // Strict grew the truss rather than drop a point. Worth saying,
+            // because the panel count that comes back is not the one asked for.
+            if (Options.Strictness == SnapStrictness.Strict
+                && Options.Divisions > 0
+                && PanelCount > Options.Divisions)
+                notes.Add(new TrussNote(
+                    TrussNoteLevel.Remark,
+                    $"Strict snapping needed {PanelCount} panels to give every snap point a node; "
+                    + $"{Options.Divisions} were asked for."));
 
             // Only worth saying when posts were asked for: chords meeting is
             // otherwise just the shape of the truss.

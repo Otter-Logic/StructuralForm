@@ -27,14 +27,14 @@ namespace OtterLogic.StructuralForm;
 /// <list type="bullet">
 /// <item><description>
 /// With <see cref="FlatTrussOptions.Divisions"/> (or
-/// <see cref="FlatTrussOptions.SnapSpacing"/>) set, the panel count is fixed up
+/// <see cref="FlatTrussOptions.Spacing"/>) set, the panel count is fixed up
 /// front and laid out evenly on plan, then <em>snapped</em> onto nearby points
 /// in two passes. The chords' own points come first and win: polyline vertices
 /// and curve kinks on either chord, which a truss has to honour or its chord
 /// members cut the corners. What they leave free is then offered to the picked
 /// points in <see cref="FlatTrussOptions.AdditionalSnapPoints"/>, each of which
-/// reaches only as far as <see cref="FlatTrussOptions.SnapDistance"/> — the
-/// radius of a sphere around it — and takes the one station nearest to it.
+/// has to lie on one of the chords to count at all, and takes the one station
+/// nearest to it.
 /// Whatever did not snap is then spread evenly between the stations that did,
 /// so the panels around a snapped node do not come out short and long against
 /// the rest. The member count is whatever you asked for; snap points move
@@ -60,10 +60,13 @@ public static class FlatTrussGenerator
 
         if (options.Divisions < 0)
             throw new ArgumentException("Divisions cannot be negative.", nameof(options));
-        if (options.SnapSpacing < 0.0)
-            throw new ArgumentException("Snap spacing cannot be negative.", nameof(options));
-        if (options.SnapDistance < 0.0)
-            throw new ArgumentException("Snap distance cannot be negative.", nameof(options));
+        if (options.Spacing < 0.0)
+            throw new ArgumentException("Spacing cannot be negative.", nameof(options));
+        if (!Enum.IsDefined(options.Strictness))
+            throw new ArgumentException(
+                $"Snap strictness {(int)options.Strictness} does not exist. Valid values are "
+                + $"0-{Enum.GetValues<SnapStrictness>().Length - 1}.",
+                nameof(options));
         if (!Enum.IsDefined(options.Type))
             throw new ArgumentException(
                 $"Truss type {(int)options.Type} does not exist. Valid values are "
@@ -79,7 +82,8 @@ public static class FlatTrussGenerator
         var topRuler = new ChordRuler(top, options.SnapTolerance);
         var bottomRuler = new ChordRuler(bottom, options.SnapTolerance);
 
-        double[] stations = ResolveStations(topRuler, bottomRuler, options);
+        double[] stations = ResolveStations(
+            topRuler, bottomRuler, options, out int unusedSnapPoints, out int offChordSnapPoints);
 
         var topNodes = new Point3d[stations.Length];
         var bottomNodes = new Point3d[stations.Length];
@@ -96,7 +100,9 @@ public static class FlatTrussGenerator
         var members = BuildMembers(topNodes, bottomNodes, options, meetAtStart, meetAtEnd);
         bool planar = IsPlanar(topNodes, bottomNodes, options.SnapTolerance);
 
-        return new FlatTruss(topNodes, bottomNodes, members, options, planar, meetAtStart, meetAtEnd);
+        return new FlatTruss(
+            topNodes, bottomNodes, members, options, planar, meetAtStart, meetAtEnd,
+            unusedSnapPoints, offChordSnapPoints);
     }
 
     /// <summary>
@@ -146,7 +152,12 @@ public static class FlatTrussGenerator
     /// has to move once it is there.
     /// </para>
     /// </summary>
-    private static double[] ResolveStations(ChordRuler top, ChordRuler bottom, FlatTrussOptions options)
+    private static double[] ResolveStations(
+        ChordRuler top,
+        ChordRuler bottom,
+        FlatTrussOptions options,
+        out int unusedSnapPoints,
+        out int offChordSnapPoints)
     {
         double merge = Math.Clamp(
             options.SnapTolerance / Math.Max(top.Length, bottom.Length), 1e-9, 0.25);
@@ -158,122 +169,225 @@ public static class FlatTrussGenerator
         var natural = new List<double>(top.GeometryStations());
         natural.AddRange(bottom.GeometryStations());
 
-        int panels = ResolvePanelCount(options, top.Length, bottom.Length);
+        // The picked points, reduced to stations once, here. Everything below
+        // works in station space: a point that survives this is already at a
+        // plan position, so nothing downstream has to know it came from a
+        // Point3d, and the two rules become the same operation twice.
+        double[] picked = OnChordStations(top, bottom, options, out offChordSnapPoints);
 
-        // No division driver: every detected point is a station in its own
-        // right, natural and picked alike, ends included. Nothing is competing
-        // for a fixed number of nodes, so there is nothing to prioritise.
+        int panels = ResolvePanelCount(options, top.Length, bottom.Length);
+        double[] stations;
+
         if (panels <= 0)
         {
+            // No division driver: every detected point is a station in its own
+            // right, natural and picked alike, ends included. Nothing is
+            // competing for a fixed number of nodes, so there is nothing to
+            // prioritise and no strictness to apply.
             var all = new List<double>(natural);
-            foreach (Point3d point in options.AdditionalSnapPoints)
-                all.Add(StationOfNearerChord(top, bottom, point));
+            all.AddRange(picked);
 
-            return Sort(all, merge, includeEnds: true);
+            stations = Sort(all, merge, includeEnds: true);
+        }
+        else if (options.Strictness == SnapStrictness.Strict)
+        {
+            // Strict hands the decision the other way round: the points are the
+            // fixed setting-out, and the panels are shared between them.
+            stations = StrictStations(natural, picked, panels, merge);
+        }
+        else
+        {
+            // Just under half a panel each way: far enough to reach a nearby
+            // point, never far enough for two stations to swap places or
+            // collapse together. Strictly under, because a whole half panel is
+            // the one distance at which two neighbours can land on the same
+            // value — one reaching forward, one reaching back — and the two
+            // rules run separately, so nothing else would notice them meeting.
+            double reach = 0.5 / panels;
+
+            stations = EvenStations(panels);
+
+            // The ends never move, so they anchor the spread like any snapped
+            // node.
+            var anchored = new bool[stations.Length];
+            anchored[0] = true;
+            anchored[^1] = true;
+
+            // Rule 1, and it wins, because it goes first and claims
+            // exclusively: the chords' own points.
+            SnapToStations(stations, Sort(natural, merge, includeEnds: false), reach, anchored);
+
+            // Rule 2: the picked points, offered whatever rule 1 left free.
+            SnapToStations(
+                stations, Sort(new List<double>(picked), merge, includeEnds: false), reach, anchored);
+
+            SpreadBetweenAnchors(stations, anchored);
         }
 
-        // Just under half a panel each way: far enough to reach a nearby point,
-        // never far enough for two stations to swap places or collapse
-        // together. Strictly under, because a whole half panel is the one
-        // distance at which two neighbours can land on the same value — one
-        // reaching forward, one reaching back — and the two rules run
-        // separately, so nothing else would notice them meeting. It caps both
-        // rules, so no snap can reorder the truss.
-        double reach = 0.5 / panels;
-        double[] stations = EvenStations(panels);
-
-        // Rule 1, and it wins: the chords' own points.
-        bool[] anchored = SnapToStations(stations, Sort(natural, merge, includeEnds: false), reach);
-
-        // Rule 2: the picked points, offered whatever stations rule 1 left free,
-        // and only within the snap distance.
-        SnapToPickedPoints(stations, anchored, top, bottom, options, reach);
-
-        SpreadBetweenAnchors(stations, anchored);
+        unusedSnapPoints = CountMissing(picked, stations, merge);
 
         return stations;
     }
 
     /// <summary>
-    /// Pull the stations still free onto the picked points within reach of
-    /// them, nearest first.
+    /// The picked points that are actually on a chord, as stations; the rest
+    /// counted out through <paramref name="offChord"/>.
     /// <para>
-    /// The distance that decides this is the real one, in 3D, from the picked
-    /// point to the truss node it would move — the sphere of
-    /// <see cref="FlatTrussOptions.SnapDistance"/> drawn around the point, with
-    /// zero meaning no sphere at all. Measuring on plan instead would let a
-    /// point far above or below a chord pull a node it is nowhere near.
-    /// </para>
-    /// <para>
-    /// A picked point is measured against both chords and takes whichever node
-    /// of the pair it is nearer to, because either one being close is what
-    /// makes it worth snapping to; where it <em>lands</em> is still the station
-    /// of the chord it sits nearer to, which is what
-    /// <see cref="StationOfNearerChord"/> decides.
+    /// A snap point has to be on the top or bottom chord. Off them there is no
+    /// honest answer to where it means: projected square onto a sloped chord it
+    /// lands at the foot of the perpendicular rather than the plan position it
+    /// was picked at, and every extra metre to the side drags that further
+    /// away. Requiring it on the curve removes the question rather than
+    /// answering it badly, and is what lets everything downstream work in plain
+    /// station space.
     /// </para>
     /// </summary>
-    private static void SnapToPickedPoints(
-        double[] stations,
-        bool[] anchored,
-        ChordRuler top,
-        ChordRuler bottom,
-        FlatTrussOptions options,
-        double reach)
+    private static double[] OnChordStations(
+        ChordRuler top, ChordRuler bottom, FlatTrussOptions options, out int offChord)
     {
-        if (options.AdditionalSnapPoints.Count == 0 || stations.Length < 3) return;
+        offChord = 0;
 
-        // Zero is no limit: a picked point reaches its chord however far to the
-        // side it sits, which is what lets one set of points serve a whole bay.
-        double radius = options.SnapDistance > 0.0 ? options.SnapDistance : double.PositiveInfinity;
+        if (options.AdditionalSnapPoints.Count == 0) return Array.Empty<double>();
 
-        // Where each picked point lands if it snaps: the station of the chord it
-        // sits nearer to, which is a plan position both chords step at.
-        var targets = new double[options.AdditionalSnapPoints.Count];
-        for (int p = 0; p < targets.Length; p++)
-            targets[p] = StationOfNearerChord(top, bottom, options.AdditionalSnapPoints[p]);
+        var stations = new List<double>(options.AdditionalSnapPoints.Count);
 
-        // Measured once, against the stations as they stand now. Every snap
-        // moves a node, so distances taken afterwards would be to somewhere the
-        // node no longer is; nearest-first ordering is on where things started.
-        var candidates = new List<(int Station, int Point, double Distance)>();
-
-        for (int s = 1; s < stations.Length - 1; s++)
+        foreach (Point3d point in options.AdditionalSnapPoints)
         {
-            if (anchored[s]) continue;
+            double station = StationOfNearerChord(top, bottom, point, out double distance);
 
-            Point3d atTop = top.PointAtStation(stations[s]);
-            Point3d atBottom = bottom.PointAtStation(stations[s]);
-
-            for (int p = 0; p < targets.Length; p++)
-            {
-                if (Math.Abs(targets[p] - stations[s]) >= reach) continue;
-
-                Point3d point = options.AdditionalSnapPoints[p];
-                double distance = Math.Min(point.DistanceTo(atTop), point.DistanceTo(atBottom));
-
-                if (distance > radius) continue;
-
-                candidates.Add((s, p, distance));
-            }
+            if (distance <= options.SnapTolerance)
+                stations.Add(station);
+            else
+                offChord++;
         }
 
-        // Nearest pair first, and both sides claimed exclusively: a station
-        // takes the one point nearest to it, and a point moves one station.
-        // Ties break on station then point, because List.Sort is unstable and a
-        // point sitting equidistant between two stations is not a rare case —
-        // it is a point in the middle of a panel.
-        candidates.Sort(Nearest);
+        return stations.ToArray();
+    }
 
-        var pointClaimed = new bool[options.AdditionalSnapPoints.Count];
+    /// <summary>
+    /// How many of <paramref name="wanted"/> did not end up as a node.
+    /// <para>
+    /// Counted against the finished list rather than tracked through the
+    /// snapping, so it stays true whichever route built it — and cannot drift
+    /// from what the geometry actually shows, which is the whole reason it is
+    /// reported.
+    /// </para>
+    /// </summary>
+    private static int CountMissing(double[] wanted, double[] stations, double merge)
+    {
+        int missing = 0;
 
-        foreach (var (station, point, _) in candidates)
+        foreach (double target in wanted)
+            if (!stations.Any(station => Math.Abs(station - target) <= merge))
+                missing++;
+
+        return missing;
+    }
+
+    /// <summary>
+    /// The stations when the snap points win: every one of them is a node, and
+    /// the panels are shared out between them.
+    /// <para>
+    /// This is how a truss is actually set out against fixed points on a
+    /// drawing. The fixed points come first — a purlin line, a hanger, the
+    /// vertices of the chords themselves — and each bay between two of them is
+    /// then divided evenly on its own. Spacing is regular <em>within</em> a
+    /// bay rather than across the whole truss, which is the trade the relaxed
+    /// rule refuses to make.
+    /// </para>
+    /// <para>
+    /// The requested panel count is still honoured wherever it can be: it is
+    /// shared between the bays in proportion to their plan width. It only grows
+    /// when there are more fixed points than the count can accommodate, since
+    /// dropping one would defeat the whole point of asking for strict.
+    /// </para>
+    /// </summary>
+    private static double[] StrictStations(
+        List<double> natural, double[] picked, int panels, double merge)
+    {
+        var fixedPoints = new List<double>(natural);
+        fixedPoints.AddRange(picked);
+
+        // Merging near-coincident points here is what keeps a point that lands
+        // on a chord vertex from splitting one node into two a hair apart.
+        double[] anchors = Sort(fixedPoints, merge, includeEnds: true);
+
+        int bays = anchors.Length - 1;
+        int[] share = Apportion(anchors, Math.Max(panels, bays));
+
+        var stations = new List<double>(share.Sum() + 1);
+
+        for (int bay = 0; bay < bays; bay++)
         {
-            if (anchored[station] || pointClaimed[point]) continue;
+            double from = anchors[bay];
+            double width = anchors[bay + 1] - from;
 
-            stations[station] = targets[point];
-            anchored[station] = true;
-            pointClaimed[point] = true;
+            // The closing anchor of each bay is the opening one of the next, so
+            // it is added once, by the next bay — or after the loop, for the end.
+            for (int step = 0; step < share[bay]; step++)
+                stations.Add(from + width * step / share[bay]);
         }
+
+        stations.Add(1.0);
+
+        return stations.ToArray();
+    }
+
+    /// <summary>
+    /// Share <paramref name="total"/> panels between the bays that
+    /// <paramref name="anchors"/> divides the truss into, in proportion to how
+    /// wide each bay is on plan.
+    /// <para>
+    /// Every bay takes one panel before anything is shared, because a bay with
+    /// no panel in it is two fixed points with no member between them. The rest
+    /// goes out by largest remainder - hand out the whole panels each bay has
+    /// earned, then give what is left to the bays that came closest to earning
+    /// another. Rounding each bay independently would not add up to the count
+    /// that was asked for, which is the one thing this has to guarantee.
+    /// </para>
+    /// </summary>
+    private static int[] Apportion(double[] anchors, int total)
+    {
+        int bays = anchors.Length - 1;
+        var share = new int[bays];
+
+        var widths = new double[bays];
+        double span = 0.0;
+
+        for (int i = 0; i < bays; i++)
+        {
+            widths[i] = anchors[i + 1] - anchors[i];
+            span += widths[i];
+            share[i] = 1;
+        }
+
+        int spare = total - bays;
+        if (spare <= 0 || span <= 0.0) return share;
+
+        // Whole panels earned, and how close each bay came to earning one more.
+        var remainder = new (int Bay, double Fraction)[bays];
+        int handed = 0;
+
+        for (int i = 0; i < bays; i++)
+        {
+            double earned = widths[i] / span * spare;
+            int whole = (int)Math.Floor(earned);
+
+            share[i] += whole;
+            handed += whole;
+            remainder[i] = (i, earned - whole);
+        }
+
+        // Largest fraction first, ties to the lower bay so the same truss comes
+        // out the same way every time.
+        Array.Sort(remainder, (a, b) => b.Fraction != a.Fraction
+            ? b.Fraction.CompareTo(a.Fraction)
+            : a.Bay.CompareTo(b.Bay));
+
+        for (int i = 0; i < spare - handed; i++)
+            share[remainder[i].Bay]++;
+
+        return share;
     }
 
     /// <summary>
@@ -327,38 +441,35 @@ public static class FlatTrussGenerator
         if (options.Divisions > 0)
             return options.Divisions;
 
-        if (options.SnapSpacing > RhinoMath.ZeroTolerance)
+        if (options.Spacing > RhinoMath.ZeroTolerance)
         {
             double longest = Math.Max(topLength, bottomLength);
-            return Math.Max(1, (int)Math.Round(longest / options.SnapSpacing, MidpointRounding.AwayFromZero));
+            return Math.Max(1, (int)Math.Round(longest / options.Spacing, MidpointRounding.AwayFromZero));
         }
 
         return 0;
     }
 
     /// <summary>
-    /// Pull each interior station onto the nearest of the chords' own points
-    /// within <paramref name="radius"/> of it, measured on plan.
+    /// Pull each still-free interior station onto the nearest target within
+    /// <paramref name="radius"/> of it, measured on plan.
     /// <para>
     /// Assignment is greedy, nearest pair first, and both sides are claimed
     /// exclusively — otherwise two stations converge on one popular point and
-    /// the panel either side degenerates. The end stations stay pinned to the
-    /// chord ends.
+    /// the panel either side degenerates.
     /// </para>
     /// <para>
-    /// Returns which stations ended up fixed, ends included, for
-    /// <see cref="SpreadBetweenAnchors"/> to divide between.
+    /// <paramref name="claimed"/> is the caller's, carried between calls rather
+    /// than returned, and that is what makes the priority work: the chords' own
+    /// points go through first and take what they can reach, the picked points
+    /// are then offered the same routine and find those stations already spoken
+    /// for. One rule, run twice, instead of two rules to keep in step.
     /// </para>
     /// </summary>
-    private static bool[] SnapToStations(double[] stations, double[] targets, double radius)
+    private static void SnapToStations(
+        double[] stations, double[] targets, double radius, bool[] claimed)
     {
-        var claimed = new bool[stations.Length];
-
-        // The ends never move, so they anchor the spread like any snapped node.
-        claimed[0] = true;
-        claimed[^1] = true;
-
-        if (targets.Length == 0 || stations.Length < 3) return claimed;
+        if (targets.Length == 0 || stations.Length < 3) return;
 
         var candidates = new List<(int Station, int Target, double Distance)>();
 
@@ -384,8 +495,6 @@ public static class FlatTrussGenerator
             claimed[station] = true;
             targetClaimed[target] = true;
         }
-
-        return claimed;
     }
 
     /// <summary>
@@ -419,11 +528,27 @@ public static class FlatTrussGenerator
     /// </para>
     /// </summary>
     private static double StationOfNearerChord(ChordRuler top, ChordRuler bottom, Point3d point)
+        => StationOfNearerChord(top, bottom, point, out _);
+
+    /// <summary>
+    /// As above, also reporting how far the point sits from the chord it was
+    /// measured against - which is what <see cref="SnapStrictness.Strict"/>
+    /// tests its radius on.
+    /// </summary>
+    private static double StationOfNearerChord(
+        ChordRuler top, ChordRuler bottom, Point3d point, out double distance)
     {
         double topStation = top.StationNearest(point, out double toTop);
         double bottomStation = bottom.StationNearest(point, out double toBottom);
 
-        return toTop <= toBottom ? topStation : bottomStation;
+        if (toTop <= toBottom)
+        {
+            distance = toTop;
+            return topStation;
+        }
+
+        distance = toBottom;
+        return bottomStation;
     }
 
     /// <summary>Sort, drop anything out of range, and merge near-coincident values.</summary>

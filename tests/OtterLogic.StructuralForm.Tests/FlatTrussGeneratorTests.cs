@@ -25,7 +25,7 @@ public class FlatTrussGeneratorTests
         => FlatTrussGenerator.Generate(
             StraightChord(Depth),
             StraightChord(0),
-            new FlatTrussOptions { Type = type, SnapSpacing = spacing, GenerateEndPosts = endPosts });
+            new FlatTrussOptions { Type = type, Spacing = spacing, GenerateEndPosts = endPosts });
 
     [Fact]
     public void Spacing_sets_the_panel_count()
@@ -43,7 +43,7 @@ public class FlatTrussGeneratorTests
         FlatTruss truss = FlatTrussGenerator.Generate(
             PolylineChord(Depth, 3.0, 7.0),
             StraightChord(0),
-            new FlatTrussOptions { SnapSpacing = 0.0 });
+            new FlatTrussOptions { Spacing = 0.0 });
 
         Assert.Equal(4, truss.TopNodes.Count);             // ends plus the two kinks
         Assert.Equal(3.0, truss.TopNodes[1].X, 6);
@@ -56,7 +56,7 @@ public class FlatTrussGeneratorTests
         FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth),
             PolylineChord(0, 5.0),
-            new FlatTrussOptions { SnapSpacing = 0.0 });
+            new FlatTrussOptions { Spacing = 0.0 });
 
         Assert.Equal(3, truss.TopNodes.Count);
         Assert.Equal(5.0, truss.TopNodes[1].X, 6);         // induced on the straight top chord
@@ -71,41 +71,12 @@ public class FlatTrussGeneratorTests
             StraightChord(0),
             new FlatTrussOptions
             {
-                SnapSpacing = 0.0,
-                AdditionalSnapPoints = new[] { new Point3d(4.0, 0, 1.9) },   // nearest the top chord
+                Spacing = 0.0,
+                AdditionalSnapPoints = new[] { new Point3d(4.0, 0, Depth) },   // on the top chord
             });
 
         Assert.Equal(3, truss.TopNodes.Count);
         Assert.Equal(4.0, truss.TopNodes[1].X, 6);
-    }
-
-    /// <summary>
-    /// A snap point is projected onto the chord with no distance cutoff, so how
-    /// far away it sits sideways makes no difference at all.
-    /// <para>
-    /// This is what lets one run of the Rhino command hand the same points to a
-    /// whole bay of trusses and get a node in the same place on every one of
-    /// them. Put a cutoff here and that stops working.
-    /// </para>
-    /// </summary>
-    [Theory]
-    [InlineData(0.0)]
-    [InlineData(20.0)]
-    [InlineData(500.0)]
-    public void A_snap_point_reaches_a_chord_however_far_away_it_is(double offset)
-    {
-        Curve top = new LineCurve(new Point3d(0, offset, Depth), new Point3d(Span, offset, Depth));
-        Curve bottom = new LineCurve(new Point3d(0, offset, 0), new Point3d(Span, offset, 0));
-
-        FlatTruss truss = FlatTrussGenerator.Generate(top, bottom, new FlatTrussOptions
-        {
-            Divisions = 4,
-            AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },   // beside the y=0 truss
-        });
-
-        // Projected square onto the chord, so it lands at x = 5 whatever the
-        // offset - not at a proportion along it, and not ignored when distant.
-        Assert.Contains(truss.TopNodes, n => Math.Abs(n.X - 5.0) < 1e-6);
     }
 
     [Fact]
@@ -166,7 +137,7 @@ public class FlatTrussGeneratorTests
         reversed.Reverse();
 
         FlatTruss truss = FlatTrussGenerator.Generate(
-            StraightChord(Depth), reversed, new FlatTrussOptions { SnapSpacing = 2.0 });
+            StraightChord(Depth), reversed, new FlatTrussOptions { Spacing = 2.0 });
 
         // Aligned chords mean every end post is vertical rather than diagonal.
         Assert.All(truss.EndPosts, post => Assert.Equal(0.0, post.Direction.X, 6));
@@ -197,7 +168,7 @@ public class FlatTrussGeneratorTests
         Curve twisted = new LineCurve(new Point3d(0, 0, 0), new Point3d(Span, 5, 0));
 
         FlatTruss truss = FlatTrussGenerator.Generate(
-            StraightChord(Depth), twisted, new FlatTrussOptions { SnapSpacing = 2.0 });
+            StraightChord(Depth), twisted, new FlatTrussOptions { Spacing = 2.0 });
 
         Assert.False(truss.IsPlanar);
     }
@@ -219,7 +190,7 @@ public class FlatTrussGeneratorTests
     {
         FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth), StraightChord(0),
-            new FlatTrussOptions { Divisions = 3, SnapSpacing = 1.0 });   // spacing alone would give 12
+            new FlatTrussOptions { Divisions = 3, Spacing = 1.0 });   // spacing alone would give 12
 
         Assert.Equal(3, truss.PanelCount);
     }
@@ -354,7 +325,7 @@ public class FlatTrussGeneratorTests
     [Fact]
     public void A_point_beside_one_chord_is_measured_there_but_moves_both()
     {
-        // The point sits just above the bottom chord, so the bottom chord is
+        // The point sits on the bottom chord, so the bottom chord is
         // what it is measured against — but the station it lands on is a plan
         // position, and the truss steps there as a whole.
         FlatTruss truss = FlatTrussGenerator.Generate(
@@ -362,7 +333,7 @@ public class FlatTrussGeneratorTests
             new FlatTrussOptions
             {
                 Divisions = 2,
-                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, 0.1) },
+                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, 0.0) },
             });
 
         Assert.Equal(5.0, truss.BottomNodes[1].X, 6);
@@ -735,57 +706,6 @@ public class FlatTrussGeneratorTests
     }
 
     [Fact]
-    public void A_picked_point_outside_the_snap_distance_is_ignored()
-    {
-        // The node the point would move sits at x = 6, one unit away from it.
-        FlatTruss truss = FlatTrussGenerator.Generate(
-            StraightChord(Depth), StraightChord(0),
-            new FlatTrussOptions
-            {
-                Divisions = 2,
-                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },
-                SnapDistance = 0.5,
-            });
-
-        Assert.Equal(6.0, truss.TopNodes[1].X, 6);
-    }
-
-    [Fact]
-    public void A_picked_point_inside_the_snap_distance_still_snaps()
-    {
-        FlatTruss truss = FlatTrussGenerator.Generate(
-            StraightChord(Depth), StraightChord(0),
-            new FlatTrussOptions
-            {
-                Divisions = 2,
-                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth) },
-                SnapDistance = 2.0,
-            });
-
-        Assert.Equal(5.0, truss.TopNodes[1].X, 6);
-    }
-
-    /// <summary>
-    /// The sphere is measured in 3D from the picked point to the node it would
-    /// move, not on plan: a point directly above a chord is as far away as it
-    /// looks, not on top of it.
-    /// </summary>
-    [Fact]
-    public void The_snap_distance_is_measured_in_three_dimensions()
-    {
-        FlatTruss truss = FlatTrussGenerator.Generate(
-            StraightChord(Depth), StraightChord(0),
-            new FlatTrussOptions
-            {
-                Divisions = 2,
-                AdditionalSnapPoints = new[] { new Point3d(5.0, 0, Depth + 5.0) },
-                SnapDistance = 2.0,
-            });
-
-        Assert.Equal(6.0, truss.TopNodes[1].X, 6);
-    }
-
-    [Fact]
     public void Only_the_nearest_of_several_picked_points_is_used()
     {
         // Both are within reach of the single station at x = 6: one a unit
@@ -808,22 +728,20 @@ public class FlatTrussGeneratorTests
     }
 
     /// <summary>
-    /// The distance limits which points snap; it never lets one move a node
-    /// past its neighbour, which would fold the truss over on itself.
+    /// Reach is capped at half a panel, so a point never moves a node past
+    /// its neighbour and folds the truss over.
     /// </summary>
     [Fact]
-    public void A_generous_snap_distance_still_cannot_reorder_the_stations()
+    public void A_distant_point_cannot_reorder_the_stations()
     {
         // Six panels put stations every 2 units and let each move 1 either way,
-        // so a point at 6.5 is within reach of the station at 6 and no other,
-        // however wide the sphere around it is.
+        // so a point at 6.5 is within reach of the station at 6 and no other.
         FlatTruss truss = FlatTrussGenerator.Generate(
             StraightChord(Depth), StraightChord(0),
             new FlatTrussOptions
             {
                 Divisions = 6,
                 AdditionalSnapPoints = new[] { new Point3d(6.5, 0, Depth) },
-                SnapDistance = 1000.0,
             });
 
         Assert.Equal(6, truss.PanelCount);
@@ -849,14 +767,6 @@ public class FlatTrussGeneratorTests
         Assert.Equal(4, truss.TopNodes.Count);
         Assert.Equal(4.0, truss.TopNodes[1].X, 6);
         Assert.Equal(9.0, truss.TopNodes[2].X, 6);
-    }
-
-    [Fact]
-    public void A_negative_snap_distance_is_rejected()
-    {
-        Assert.Throws<ArgumentException>(() => FlatTrussGenerator.Generate(
-            StraightChord(Depth), StraightChord(0),
-            new FlatTrussOptions { Divisions = 4, SnapDistance = -1.0 }));
     }
 
     // ---- no diagonal where the chords meet --------------------------------
@@ -967,5 +877,289 @@ public class FlatTrussGeneratorTests
 
         Assert.Equal(4, truss.Diagonals.Count());
         AssertNoMemberIsDrawnTwice(truss);
+    }
+
+    // ---- strictness --------------------------------------------------------
+
+    private static FlatTruss Snapped(SnapStrictness strictness, int divisions, params double[] xs)
+        => FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = divisions,
+                Strictness = strictness,
+                AdditionalSnapPoints = xs.Select(x => new Point3d(x, 0, Depth)).ToArray(),
+            });
+
+    [Fact]
+    public void Relaxed_is_the_default()
+    {
+        Assert.Equal(SnapStrictness.Relaxed, new FlatTrussOptions().Strictness);
+    }
+
+    /// <summary>
+    /// The case the whole option exists for. Four panels put stations every
+    /// 3 units and let each reach 1.5; a point at 0.6 is 2.4 from the nearest,
+    /// so the regular layout cannot honour it.
+    /// </summary>
+    [Fact]
+    public void Relaxed_leaves_an_unreachable_point_alone_and_says_so()
+    {
+        FlatTruss truss = Snapped(SnapStrictness.Relaxed, 4, 0.6);
+
+        Assert.Equal(4, truss.PanelCount);
+        Assert.Equal(1, truss.UnusedSnapPoints);
+        Assert.DoesNotContain(truss.TopNodes, n => Math.Abs(n.X - 0.6) < 1e-6);
+
+        // Invisible on the geometry, so the truss has to say it out loud.
+        Assert.Contains(truss.Notes, n => n.Message.Contains("Strict"));
+    }
+
+    [Fact]
+    public void Strict_places_a_node_on_the_same_point()
+    {
+        FlatTruss truss = Snapped(SnapStrictness.Strict, 4, 0.6);
+
+        Assert.Equal(4, truss.PanelCount);          // the count still holds
+        Assert.Equal(0, truss.UnusedSnapPoints);
+        Assert.Equal(0.6, truss.TopNodes[1].X, 6);
+
+        // What is left of the chord is divided evenly among the panels left.
+        for (int i = 2; i < truss.TopNodes.Count; i++)
+            Assert.Equal(0.6 + (Span - 0.6) * (i - 1) / 3.0, truss.TopNodes[i].X, 6);
+    }
+
+    [Fact]
+    public void Strict_honours_every_point_where_relaxed_honours_what_it_can_reach()
+    {
+        double[] points = { 1.0, 5.5, 11.4 };
+
+        FlatTruss relaxed = Snapped(SnapStrictness.Relaxed, 6, points);
+        FlatTruss strict = Snapped(SnapStrictness.Strict, 6, points);
+
+        Assert.Equal(2, relaxed.UnusedSnapPoints);
+        Assert.Equal(0, strict.UnusedSnapPoints);
+
+        Assert.All(points, x => Assert.Contains(strict.TopNodes, n => Math.Abs(n.X - x) < 1e-6));
+
+        // Neither one changed how many members there are.
+        Assert.Equal(6, relaxed.PanelCount);
+        Assert.Equal(6, strict.PanelCount);
+    }
+
+    /// <summary>
+    /// Strict shares the panels between the fixed points rather than across the
+    /// whole truss, so each bay is regular on its own.
+    /// </summary>
+    [Fact]
+    public void Strict_divides_each_bay_evenly_within_itself()
+    {
+        // One point at mid-span: two bays of equal width, three panels each.
+        FlatTruss truss = Snapped(SnapStrictness.Strict, 6, 6.0);
+
+        Assert.Equal(6, truss.PanelCount);
+
+        for (int i = 0; i <= 6; i++)
+            Assert.Equal(i * 2.0, truss.TopNodes[i].X, 6);
+    }
+
+    [Fact]
+    public void Strict_grows_the_panel_count_rather_than_drop_a_point()
+    {
+        FlatTruss truss = Snapped(SnapStrictness.Strict, 2, 1.0, 4.0, 7.0, 10.0);
+
+        Assert.Equal(0, truss.UnusedSnapPoints);
+        Assert.Equal(5, truss.PanelCount);          // four points plus both ends
+        Assert.Contains(truss.Notes, n => n.Message.Contains("5 panels"));
+    }
+
+    [Fact]
+    public void Strict_still_honours_the_chords_own_vertices()
+    {
+        var top = new PolylineCurve(new[]
+        {
+            new Point3d(0, 0, Depth), new Point3d(4.3, 0, Depth + 1), new Point3d(Span, 0, Depth),
+        });
+
+        FlatTruss truss = FlatTrussGenerator.Generate(top, StraightChord(0), new FlatTrussOptions
+        {
+            Divisions = 5,
+            Strictness = SnapStrictness.Strict,
+            // On the sloped run of the chord, so projecting it onto that chord
+            // does not move it: a point off to the side lands at the foot of
+            // the perpendicular, which on a slope is not the plan position it
+            // was picked at.
+            AdditionalSnapPoints = new[] { new Point3d(2.15, 0, Depth + 0.5) },
+        });
+
+        // The kink and the picked point are both nodes; a chord member across
+        // the kink would cut the corner off the truss.
+        Assert.Contains(truss.TopNodes, n => Math.Abs(n.X - 4.3) < 1e-6);
+        Assert.Contains(truss.TopNodes, n => Math.Abs(n.X - 2.15) < 1e-6);
+        Assert.Equal(5, truss.PanelCount);
+    }
+
+    /// <summary>
+    /// The on-chord rule is not a strictness setting. Strict decides what the
+    /// division owes a point it can see; a point off the chords is not one it
+    /// can see at all.
+    /// </summary>
+    [Theory]
+    [InlineData(SnapStrictness.Relaxed)]
+    [InlineData(SnapStrictness.Strict)]
+    public void A_point_off_both_chords_is_discounted_under_either_rule(SnapStrictness strictness)
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 4,
+                Strictness = strictness,
+                AdditionalSnapPoints = new[] { new Point3d(6.0, 5.0, Depth) },   // 5 units aside
+            });
+
+        Assert.Equal(1, truss.OffChordSnapPoints);
+        Assert.Equal(0, truss.UnusedSnapPoints);       // it never got as far as being unused
+        Assert.Equal(4, truss.PanelCount);
+
+        // Loud, because the truss looks perfectly reasonable without it.
+        TrussNote note = Assert.Single(truss.Notes);
+        Assert.Equal(TrussNoteLevel.Warning, note.Level);
+        Assert.Contains("either chord", note.Message);
+    }
+
+    [Fact]
+    public void A_point_on_the_bottom_chord_counts_just_as_well_as_one_on_the_top()
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 4,
+                Strictness = SnapStrictness.Strict,
+                AdditionalSnapPoints = new[] { new Point3d(0.6, 0, 0.0) },   // on the bottom chord
+            });
+
+        Assert.Equal(0, truss.OffChordSnapPoints);
+        Assert.Equal(0.6, truss.TopNodes[1].X, 6);
+        Assert.Equal(0.6, truss.BottomNodes[1].X, 6);
+    }
+
+    /// <summary>
+    /// On the curve means on it within the document tolerance, which is what
+    /// Rhino's own On-Curve osnap lands inside. Float noise from a computed
+    /// point must not disqualify it.
+    /// </summary>
+    [Fact]
+    public void A_point_a_hair_off_the_chord_still_counts()
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions
+            {
+                Divisions = 4,
+                SnapTolerance = 0.01,
+                Strictness = SnapStrictness.Strict,
+                AdditionalSnapPoints = new[] { new Point3d(0.6, 0, Depth - 0.005) },
+            });
+
+        Assert.Equal(0, truss.OffChordSnapPoints);
+        Assert.Equal(0.6, truss.TopNodes[1].X, 6);
+    }
+
+    /// <summary>
+    /// The case the on-chord rule exists for. A point beside a curved chord
+    /// projects to the foot of the perpendicular, which is not the plan
+    /// position it was picked at; taken off the curve itself there is nothing
+    /// to drift.
+    /// </summary>
+    [Fact]
+    public void A_curved_chord_takes_a_point_that_lies_on_it()
+    {
+        var arc = new ArcCurve(new Arc(
+            new Point3d(0, 0, 1), new Point3d(Span / 2, 0, 4), new Point3d(Span, 0, 1)));
+
+        Point3d onArc = arc.PointAtNormalizedLength(0.25);
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            arc, StraightChord(0), new FlatTrussOptions
+            {
+                Divisions = 5,
+                Strictness = SnapStrictness.Strict,
+                Type = TrussType.Vierendeel,
+                AdditionalSnapPoints = new[] { onArc },
+            });
+
+        Assert.Equal(0, truss.OffChordSnapPoints);
+        Assert.Contains(truss.TopNodes, n => n.DistanceTo(onArc) < 1e-6);
+
+        // And the pair still steps together, which is what plan stations exist
+        // to protect.
+        Assert.All(truss.Verticals, line => Assert.Equal(0.0, line.Direction.X, 6));
+    }
+
+    [Fact]
+    public void Strictness_is_moot_when_the_geometry_drives()
+    {
+        // No division to argue with, so both rules put a node on every point.
+        foreach (SnapStrictness mode in Enum.GetValues<SnapStrictness>())
+        {
+            FlatTruss truss = Snapped(mode, 0, 0.6, 5.5);
+
+            Assert.Equal(0, truss.UnusedSnapPoints);
+            Assert.Equal(0.6, truss.TopNodes[1].X, 6);
+            Assert.Equal(5.5, truss.TopNodes[2].X, 6);
+        }
+    }
+
+    [Fact]
+    public void Strict_keeps_the_nodes_in_order()
+    {
+        FlatTruss truss = Snapped(SnapStrictness.Strict, 7, 0.4, 0.9, 11.6);
+
+        for (int i = 1; i < truss.TopNodes.Count; i++)
+            Assert.True(truss.TopNodes[i].X > truss.TopNodes[i - 1].X);
+    }
+
+    [Fact]
+    public void An_undefined_strictness_is_rejected()
+    {
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => FlatTrussGenerator.Generate(
+                StraightChord(Depth), StraightChord(0),
+                new FlatTrussOptions { Divisions = 4, Strictness = (SnapStrictness)42 }));
+
+        Assert.Contains("42", error.Message);
+    }
+
+    [Fact]
+    public void A_truss_with_nothing_unused_says_nothing_about_snap_points()
+    {
+        FlatTruss truss = Snapped(SnapStrictness.Relaxed, 4, 3.4);
+
+        Assert.Equal(0, truss.UnusedSnapPoints);
+        Assert.Empty(truss.Notes);
+    }
+
+    // ---- spacing -----------------------------------------------------------
+
+    [Fact]
+    public void Spacing_is_overridden_by_divisions()
+    {
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            StraightChord(Depth), StraightChord(0),
+            new FlatTrussOptions { Divisions = 3, Spacing = 1.0 });
+
+        Assert.Equal(3, truss.PanelCount);
+    }
+
+    [Fact]
+    public void A_negative_spacing_is_rejected()
+    {
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => FlatTrussGenerator.Generate(
+                StraightChord(Depth), StraightChord(0), new FlatTrussOptions { Spacing = -1.0 }));
+
+        Assert.Contains("Spacing", error.Message);
     }
 }

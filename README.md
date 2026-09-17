@@ -30,23 +30,48 @@ passes with a priority between them:
    anywhere but a kink leaves a chord member cutting that corner, so these are
    not negotiable.
 2. **Then the picked points**, offered whatever stations the first pass left
-   free. `SnapDistance` is how near a node has to come to one for it to snap —
-   the radius of a sphere around the point, measured in real 3D distance, with
-   zero meaning no limit. A node takes the one point nearest to it, and a point
-   moves one node, so several points crowded around a station cannot collapse
-   the panels either side of it.
+   free. A node takes the one point nearest to it, and a point moves one node,
+   so several points crowded around a station cannot collapse the panels either
+   side of it.
 
-Reach is capped at half a panel each way whatever `SnapDistance` says, so no
-snap can move a station past its neighbour and fold the truss over. Whatever did
+Reach is capped at half a panel each way, so no snap can move a station past its
+neighbour and fold the truss over. Whatever did
 not snap is then **spread evenly between the ones that did**, so the panels
 either side of a snapped node do not come out short and long against an
 otherwise regular truss.
 
-Snap points anchor *both* chords. A point is measured against whichever chord it
-sits nearer to, since that decides where along the truss it lands, but a panel
-point is where the whole truss steps. Leave `Divisions` at zero and control
-inverts: every polyline vertex, curve kink and picked point becomes a node, and
-with nothing competing for a fixed node count there is no priority to apply.
+`Strictness` decides what happens to a point that cap puts out of reach — one
+placed away from the conventional spacing, which on a six-panel 12 m truss means
+anything more than a metre off a panel point:
+
+| | |
+|---|---|
+| `Relaxed` *(default)* | the division wins. Panel count is exactly what was asked for, the spacing stays regular, and a point too far off is left unused — reported on `FlatTruss.UnusedSnapPoints` and said out loud in `Notes`, since nothing about the geometry would otherwise show it |
+| `Strict` | the points win. Every one becomes a node, and the panels are shared between them in proportion to the gaps they leave, so spacing is even *within* each bay rather than across the whole truss. The count only grows when there are more points than panels to give them |
+
+Relaxed is the default because a regular truss is what most chords want, and an
+oddly placed point is more often a stray pick than an intention. The count of
+unused points is what keeps that a choice rather than a silent loss.
+
+**A snap point has to lie on one of the two chords**, within `SnapTolerance` —
+the same document tolerance Rhino's own On-Curve osnap works to. Anything else
+is discounted and counted on `FlatTruss.OffChordSnapPoints`.
+
+That requirement is what keeps the rule predictable. A point floating beside the
+truss has no honest answer: projected square onto a sloped chord it lands at the
+foot of the perpendicular, which is not the plan position it was picked at, and
+the further off it sits the further that drifts. On the chord the point is
+already at a station, and that station is where the node goes — nothing to
+decide, and everything downstream works in plain station space.
+
+Which chord it lies on decides where along the truss it lands, but a panel point
+is where the whole truss steps, so it anchors *both*.
+
+`Spacing` is the same question asked by length instead of count: the span is
+divided by it and rounded to whole panels. `Divisions` overrides it whenever
+both are set. Leave both at zero and control inverts: every polyline vertex,
+curve kink and picked point becomes a node, and with nothing competing for a
+fixed node count there is no priority and no strictness to apply.
 
 Where the two chords converge — the tip of a cantilever, the apex of a tapered
 truss — that end panel gets neither an end post nor a diagonal. Both nodes there

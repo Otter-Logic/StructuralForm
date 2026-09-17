@@ -26,8 +26,21 @@ public sealed record FlatTrussOptions
     public bool GenerateEndPosts { get; init; } = true;
 
     /// <summary>
-    /// Extra points to force a node at. Each is pulled onto whichever chord is
-    /// nearer, so you can pick points off either one.
+    /// Extra points to force a node at.
+    /// <para>
+    /// A snap point has to lie <em>on</em> one of the two chords, within
+    /// <see cref="SnapTolerance"/>. Anything else is discounted — reported on
+    /// <see cref="FlatTruss.OffChordSnapPoints"/>, never quietly dropped.
+    /// </para>
+    /// <para>
+    /// That requirement is what keeps the rule simple enough to predict. A
+    /// point floating beside the truss has no single honest answer: projected
+    /// square onto a sloped chord it lands at the foot of the perpendicular,
+    /// which is not the plan position it was picked at, and the further off it
+    /// sits the further that drifts. On the chord there is nothing to decide —
+    /// the point is already at a station, and that station is where the node
+    /// goes.
+    /// </para>
     /// <para>
     /// These are the <em>secondary</em> snap targets. The chords' own natural
     /// points — polyline vertices and curve kinks — are checked first and take
@@ -35,25 +48,6 @@ public sealed record FlatTrussOptions
     /// </para>
     /// </summary>
     public IReadOnlyList<Point3d> AdditionalSnapPoints { get; init; } = Array.Empty<Point3d>();
-
-    /// <summary>
-    /// How near a truss node has to come to one of
-    /// <see cref="AdditionalSnapPoints"/> for it to snap: the radius of a
-    /// sphere around each picked point, in model units.
-    /// <para>
-    /// Zero — the default — means no limit, so a point reaches its chord however
-    /// far to the side it sits. That is what lets one run of the Rhino command
-    /// hand the same points to a whole bay of trusses and get a node in the
-    /// same place on every one of them; set a radius when you would rather a
-    /// point only affect the trusses it is actually near.
-    /// </para>
-    /// <para>
-    /// It never overrides the chords' own natural points, and it never moves a
-    /// station past its neighbour: half a panel each way is the hard limit
-    /// whatever this is set to.
-    /// </para>
-    /// </summary>
-    public double SnapDistance { get; init; }
 
     /// <summary>
     /// Number of panels, laid out evenly by <em>plan</em> distance before
@@ -65,20 +59,44 @@ public sealed record FlatTrussOptions
     /// Zero — the default — hands control back to the geometry, and every
     /// detected point becomes a node in its own right.
     /// </para>
+    /// <para>
+    /// <see cref="Strictness"/> decides what happens when a snap point sits
+    /// somewhere the even layout cannot reach.
+    /// </para>
     /// </summary>
     public int Divisions { get; init; }
 
     /// <summary>
-    /// Target panel spacing on plan, in model units. An alternative way to say
-    /// <see cref="Divisions"/> when you care about panel length rather than
-    /// panel count; <see cref="Divisions"/> wins if both are set. Zero leaves
-    /// the panel count to the geometry.
+    /// Target panel spacing on plan, in model units. The secondary way to say
+    /// <see cref="Divisions"/>, for when you care about panel length rather
+    /// than panel count — the span is divided by this and rounded to whole
+    /// panels. <see cref="Divisions"/> overrides it whenever both are set, and
+    /// zero from both leaves the panel count to the geometry.
     /// </summary>
-    public double SnapSpacing { get; init; }
+    public double Spacing { get; init; }
+
+    /// <summary>
+    /// Whether an awkwardly placed snap point moves the division, or the
+    /// division ignores it. See <see cref="SnapStrictness"/>.
+    /// <para>
+    /// <see cref="SnapStrictness.Relaxed"/> by default: a regular truss is what
+    /// most chords want, and the points that could not be used are reported on
+    /// <see cref="FlatTruss.UnusedSnapPoints"/> rather than lost quietly.
+    /// </para>
+    /// </summary>
+    public SnapStrictness Strictness { get; init; } = SnapStrictness.Relaxed;
 
     /// <summary>
     /// Distance below which two nodes are treated as the same one. Also the
-    /// planarity check's allowance.
+    /// planarity check's allowance, and how near a point in
+    /// <see cref="AdditionalSnapPoints"/> has to be to a chord to count as
+    /// being on it.
+    /// <para>
+    /// Both front-ends set this from the document tolerance, which is the value
+    /// Rhino itself uses to decide whether a point is on a curve — so a point
+    /// placed with an On-Curve osnap qualifies, and one merely near the truss
+    /// does not.
+    /// </para>
     /// </summary>
     public double SnapTolerance { get; init; } = 0.01;
 }
