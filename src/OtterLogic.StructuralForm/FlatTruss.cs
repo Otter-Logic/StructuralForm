@@ -2,23 +2,6 @@ using Rhino.Geometry;
 
 namespace OtterLogic.StructuralForm;
 
-/// <summary>How loudly a front-end should say a <see cref="TrussNote"/>.</summary>
-public enum TrussNoteLevel
-{
-    /// <summary>Worth knowing. The truss is fine.</summary>
-    Remark,
-
-    /// <summary>Probably a modelling mistake, but not an error.</summary>
-    Warning,
-}
-
-/// <summary>
-/// Something worth telling the user about a generated truss. The wording is the
-/// domain's, so both front-ends say the same thing; the level is a hint each
-/// one maps onto whatever it has — a Grasshopper bubble, a command-line line.
-/// </summary>
-public readonly record struct TrussNote(TrussNoteLevel Level, string Message);
-
 /// <summary>
 /// A generated truss: paired chord nodes plus the members between them.
 /// <para>
@@ -184,55 +167,25 @@ public sealed class FlatTruss
     /// host — so it lives here, and each front-end only decides how to show it.
     /// </para>
     /// </summary>
-    public IReadOnlyList<TrussNote> Notes
+    public IReadOnlyList<FormNote> Notes
     {
         get
         {
-            var notes = new List<TrussNote>(4);
+            var notes = new List<FormNote>(4);
 
             if (!IsPlanar)
-                notes.Add(new TrussNote(
-                    TrussNoteLevel.Warning,
+                notes.Add(new FormNote(
+                    FormNoteLevel.Warning,
                     "The two chords are not coplanar, so this truss is warped."));
 
-            // Off the chords entirely: a different mistake from the one below,
-            // and a different fix, so it gets its own words rather than being
-            // folded into a single count of things that did not work.
-            if (OffChordSnapPoints > 0)
-                notes.Add(new TrussNote(
-                    TrussNoteLevel.Warning,
-                    OffChordSnapPoints == 1
-                        ? "One snap point was discounted for not lying on either chord. "
-                          + "Snap points have to sit on the curves you picked."
-                        : $"{OffChordSnapPoints} snap points were discounted for not lying on "
-                          + "either chord. Snap points have to sit on the curves you picked."));
-
-            // A pick that changed nothing is the one failure here with no
-            // visible symptom, so it is the one most worth saying out loud.
-            if (UnusedSnapPoints > 0)
-                notes.Add(new TrussNote(
-                    TrussNoteLevel.Remark,
-                    UnusedSnapPoints == 1
-                        ? "One snap point was too far from a panel point to be used. "
-                          + "Set strictness to Strict to place a node on it."
-                        : $"{UnusedSnapPoints} snap points were too far from a panel point to be "
-                          + "used. Set strictness to Strict to place a node on each of them."));
-
-            // Strict grew the truss rather than drop a point. Worth saying,
-            // because the panel count that comes back is not the one asked for.
-            if (Options.Strictness == SnapStrictness.Strict
-                && Options.Divisions > 0
-                && PanelCount > Options.Divisions)
-                notes.Add(new TrussNote(
-                    TrussNoteLevel.Remark,
-                    $"Strict snapping needed {PanelCount} panels to give every snap point a node; "
-                    + $"{Options.Divisions} were asked for."));
+            StationNotes.AddTo(
+                notes, 2, OffChordSnapPoints, UnusedSnapPoints, Options.Strictness, Options.Divisions, PanelCount);
 
             // Only worth saying when posts were asked for: chords meeting is
             // otherwise just the shape of the truss.
             if (Options.GenerateEndPosts && (ChordsMeetAtStart || ChordsMeetAtEnd))
-                notes.Add(new TrussNote(
-                    TrussNoteLevel.Remark,
+                notes.Add(new FormNote(
+                    FormNoteLevel.Remark,
                     ChordsMeetAtStart && ChordsMeetAtEnd
                         ? "The chords meet at both ends, so no end posts were generated."
                         : "The chords meet at one end, so only one end post was generated."));

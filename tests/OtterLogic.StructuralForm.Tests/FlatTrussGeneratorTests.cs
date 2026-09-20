@@ -486,7 +486,7 @@ public class FlatTrussGeneratorTests
         Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.BottomNodes).Clear());
         Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.Nodes).Clear());
         Assert.Throws<NotSupportedException>(() => ((IList<Point3d>)truss.DistinctNodes).Clear());
-        Assert.Throws<NotSupportedException>(() => ((IList<TrussNote>)truss.Notes).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<FormNote>)truss.Notes).Clear());
 
         // The array the generator built is not the array handed out.
         Assert.Null(truss.TopNodes as Point3d[]);
@@ -508,7 +508,7 @@ public class FlatTrussGeneratorTests
             new FlatTrussOptions { Divisions = 4 });
 
         Assert.False(truss.IsPlanar);
-        Assert.Contains(truss.Notes, n => n.Level == TrussNoteLevel.Warning);
+        Assert.Contains(truss.Notes, n => n.Level == FormNoteLevel.Warning);
     }
 
     [Fact]
@@ -535,7 +535,8 @@ public class FlatTrussGeneratorTests
         Curve top = new LineCurve(new Point3d(0, 0, 1), new Point3d(Span, 0, 5));
 
         FlatTruss truss = FlatTrussGenerator.Generate(
-            top, StraightChord(0), new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel });
+            top, StraightChord(0),
+            new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel, MeasureOnPlan = true });
 
         for (int i = 0; i < truss.TopNodes.Count; i++)
         {
@@ -554,12 +555,57 @@ public class FlatTrussGeneratorTests
             new Point3d(0, 0, 1), new Point3d(Span / 2, 0, 4), new Point3d(Span, 0, 1)));
 
         FlatTruss truss = FlatTrussGenerator.Generate(
-            arc, StraightChord(0), new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel });
+            arc, StraightChord(0),
+            new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel, MeasureOnPlan = true });
 
         for (int i = 0; i < truss.TopNodes.Count; i++)
             Assert.Equal(i * Span / 6.0, truss.TopNodes[i].X, 6);
 
         Assert.All(truss.Verticals, line => Assert.Equal(0.0, line.Direction.X, 6));
+    }
+
+    /// <summary>
+    /// The default: each chord divided by its own length. On an arc that is
+    /// equal steps round the curve, which on plan are anything but equal —
+    /// and is the only division an organic chord can be said to have.
+    /// </summary>
+    [Fact]
+    public void By_default_a_curved_chord_is_divided_along_itself()
+    {
+        var arc = new ArcCurve(new Arc(
+            new Point3d(0, 0, 1), new Point3d(Span / 2, 0, 4), new Point3d(Span, 0, 1)));
+
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            arc, StraightChord(0), new FlatTrussOptions { Divisions = 6, Type = TrussType.Vierendeel });
+
+        for (int i = 0; i < truss.TopNodes.Count; i++)
+        {
+            Assert.True(truss.TopNodes[i].DistanceTo(arc.PointAtNormalizedLength(i / 6.0)) < 1e-6);
+            Assert.Equal(i * Span / 6.0, truss.BottomNodes[i].X, 6);
+        }
+
+        // Not the plan answer: the arc is steeper at its ends, so an equal step
+        // along it covers less ground there.
+        Assert.True(truss.TopNodes[1].X < Span / 6.0 - 0.01);
+    }
+
+    /// <summary>
+    /// What the default is for. Two chords standing on end have no plan length,
+    /// and one longer than the other still has to be divided in proportion.
+    /// </summary>
+    [Fact]
+    public void By_default_spacing_is_measured_along_the_chord()
+    {
+        // 3-4-5: 15 long over a plan run of 9.
+        Curve top = new LineCurve(new Point3d(0, 0, 2), new Point3d(9, 0, 14));
+        Curve bottom = new LineCurve(new Point3d(0, 0, 0), new Point3d(9, 0, 12));
+
+        var along = FlatTrussGenerator.Generate(top, bottom, new FlatTrussOptions { Spacing = 3.0 });
+        var onPlan = FlatTrussGenerator.Generate(
+            top, bottom, new FlatTrussOptions { Spacing = 3.0, MeasureOnPlan = true });
+
+        Assert.Equal(5, along.PanelCount);      // 15 / 3
+        Assert.Equal(3, onPlan.PanelCount);     //  9 / 3
     }
 
     /// <summary>
@@ -573,7 +619,8 @@ public class FlatTrussGeneratorTests
         Curve top = new LineCurve(new Point3d(3, 4, 2), new Point3d(3, 4, 14));
         Curve bottom = new LineCurve(new Point3d(5, 7, 2), new Point3d(5, 7, 14));
 
-        FlatTruss truss = FlatTrussGenerator.Generate(top, bottom, new FlatTrussOptions { Divisions = 4 });
+        FlatTruss truss = FlatTrussGenerator.Generate(
+            top, bottom, new FlatTrussOptions { Divisions = 4, MeasureOnPlan = true });
 
         Assert.Equal(4, truss.PanelCount);
         Assert.All(truss.TopNodes, n => Assert.True(n.IsValid));
@@ -622,8 +669,8 @@ public class FlatTrussGeneratorTests
         Assert.Equal(truss.Nodes.Count - 2, truss.DistinctNodes.Count);
 
         // And that is worth saying out loud, since end posts were asked for.
-        TrussNote note = Assert.Single(truss.Notes);
-        Assert.Equal(TrussNoteLevel.Remark, note.Level);
+        FormNote note = Assert.Single(truss.Notes);
+        Assert.Equal(FormNoteLevel.Remark, note.Level);
         Assert.Contains("both ends", note.Message);
     }
 
@@ -1023,8 +1070,8 @@ public class FlatTrussGeneratorTests
         Assert.Equal(4, truss.PanelCount);
 
         // Loud, because the truss looks perfectly reasonable without it.
-        TrussNote note = Assert.Single(truss.Notes);
-        Assert.Equal(TrussNoteLevel.Warning, note.Level);
+        FormNote note = Assert.Single(truss.Notes);
+        Assert.Equal(FormNoteLevel.Warning, note.Level);
         Assert.Contains("either chord", note.Message);
     }
 
@@ -1085,6 +1132,7 @@ public class FlatTrussGeneratorTests
             arc, StraightChord(0), new FlatTrussOptions
             {
                 Divisions = 5,
+                MeasureOnPlan = true,
                 Strictness = SnapStrictness.Strict,
                 Type = TrussType.Vierendeel,
                 AdditionalSnapPoints = new[] { onArc },

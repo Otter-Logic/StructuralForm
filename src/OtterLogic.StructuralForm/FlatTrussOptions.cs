@@ -50,8 +50,8 @@ public sealed record FlatTrussOptions
     public IReadOnlyList<Point3d> AdditionalSnapPoints { get; init; } = Array.Empty<Point3d>();
 
     /// <summary>
-    /// Number of panels, laid out evenly by <em>plan</em> distance before
-    /// snapping. This is the primary driver: when set, it fixes how many
+    /// Number of panels, laid out evenly before snapping — along the chords, or
+    /// on plan under <see cref="MeasureOnPlan"/>. This is the primary driver: when set, it fixes how many
     /// verticals and diagonals there are, and the resulting stations then
     /// migrate onto nearby snap points rather than adding to them — after which
     /// whatever did not snap is spread evenly between the ones that did.
@@ -67,13 +67,33 @@ public sealed record FlatTrussOptions
     public int Divisions { get; init; }
 
     /// <summary>
-    /// Target panel spacing on plan, in model units. The secondary way to say
+    /// Target panel spacing, in model units, measured the way
+    /// <see cref="MeasureOnPlan"/> says. The secondary way to say
     /// <see cref="Divisions"/>, for when you care about panel length rather
     /// than panel count — the span is divided by this and rounded to whole
     /// panels. <see cref="Divisions"/> overrides it whenever both are set, and
     /// zero from both leaves the panel count to the geometry.
     /// </summary>
     public double Spacing { get; init; }
+
+    /// <summary>
+    /// Measure <see cref="Divisions"/> and <see cref="Spacing"/> on plan — the
+    /// chords projected onto world XY — rather than along the chords.
+    /// <para>
+    /// Off by default, so the division is pure curve geometry: each chord is
+    /// divided by its own length. That is the only reading that works for a
+    /// truss standing on end, and the only honest one for a truss running
+    /// through space, where plan means nothing in particular.
+    /// </para>
+    /// <para>
+    /// Turn it on for a roof truss. A pitched top chord is longer than the
+    /// level bottom chord under it, so dividing each by its own length leaves
+    /// every vertical leaning; dividing both by plan distance stands them up.
+    /// A chord with no plan length — seen edge-on from above — is measured
+    /// along itself either way.
+    /// </para>
+    /// </summary>
+    public bool MeasureOnPlan { get; init; }
 
     /// <summary>
     /// Whether an awkwardly placed snap point moves the division, or the

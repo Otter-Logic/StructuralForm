@@ -7,21 +7,36 @@ Trusses and structural layouts for [OtterLogic](https://github.com/Otter-Logic/R
 A **domain**: it owns its types *and* its logic. `TrussType`, `FlatTrussOptions`,
 `FlatTruss` and `FlatTrussGenerator` live together because they change together.
 
+Four tools so far, built the same way: the user draws the geometry that governs,
+the tool does the setting-out, and anything that quietly did not work is said
+out loud in `Notes` (a `FormNote`, shared by all of them).
+
+| | |
+|---|---|
+| [FlatTruss](#flattruss) | bracing between a top and a bottom chord |
+| [BoxTruss](#boxtruss) | the same in 3D: a triangular or box truss on three or four chords |
+| [SurfaceGrid](#surfacegrid) | a quad, triangulated or diagrid layout over a surface, on a reusable `Lattice` |
+| [BeamInfill](#beaminfill) | secondary members in every panel a floor's primary beams enclose |
+
 ## FlatTruss
 
 Nodes sit at *stations* — positions along the chords measured as a fraction of
-**plan** length, shared by both chords, so top node `i` and bottom node `i` sit
-at the same plan position and every web pattern reduces to index arithmetic.
+length, shared by both chords, so top node `i` and bottom node `i` sit at the
+same station and every web pattern reduces to index arithmetic.
 
-Plan rather than along-the-chord because a pitched top chord is longer than the
-level bottom chord under it: divide each by its own length and node `i` lands a
-different distance along each, leaving every vertical leaning. Chords are
-converted to NURBS before projecting so a parameter means the same place on the
-chord and on its plan ruler — projecting an arc directly reparameterises it,
+`MeasureOnPlan` says which length. **Off by default**, so each chord is divided
+along itself: pure curve geometry, which is the only reading that works for a
+truss standing on end and the only honest one for a truss running through space.
+**On** measures both chords by their *plan* length — the chord projected onto
+world XY — which is what a roof truss wants: a pitched top chord is longer than
+the level bottom chord under it, so dividing each by its own length lands node
+`i` a different distance along each and leaves every vertical leaning. Chords
+are converted to NURBS before projecting so a parameter means the same place on
+the chord and on its plan ruler — projecting an arc directly reparameterises it,
 which on a 12 m chord is a 24 mm error in every node. A chord edge-on in plan has
-no plan length to divide and measures along itself instead.
+no plan length to divide and measures along itself either way.
 
-`Divisions` fixes the panel count up front and lays it out evenly on plan. The
+`Divisions` fixes the panel count up front and lays it out evenly. The
 stations then **snap** onto nearby points rather than adding to them, in two
 passes with a priority between them:
 
@@ -101,6 +116,175 @@ to work out for itself, so that two of them cannot come to different answers:
 `FlatTrussGenerator` validates its own options and throws `ArgumentException` with
 the message to show. Front-ends are expected to catch it and display it, not to
 keep a second copy of the rules.
+
+## BoxTruss
+
+One or two top chords and one or two bottom chords: two and one (either way up)
+is a triangular truss, two and two is a box. One of each is refused with a
+pointer to FlatTruss, because the result would be a flat truss without the
+things that tool knows to say about one.
+
+**A box truss is flat trusses sharing chords, and is built as exactly that.**
+Every chord is divided at *one* shared station list by `StationLayout` — the
+layout lifted out of `FlatTrussGenerator` for the purpose, so divisions, spacing,
+`MeasureOnPlan`, the two-pass snapping and `Strictness` all mean precisely what
+they mean above, over three or four chords instead of two. A kink or a snap
+point on any chord is a panel point on all of them, which is what keeps a panel
+point a single cross-section through the truss rather than four near misses.
+
+The web then goes in face by face, through the same `WebBuilder` a flat truss
+uses:
+
+| | |
+|---|---|
+| **side faces** — top chord to bottom chord | a flat truss in every respect: `Type`, verticals, diagonals, end posts. A test pins this: the side face of a box is member-for-member the `FlatTruss` between the same two chords |
+| **lacing faces** — between twin chords, top to top and bottom to bottom | `LacingType`, the same six patterns read the same way, giving `Strut`s for verticals and `Lacing` for diagonals. Exists only where a chord has a twin, which is the whole difference between the shapes |
+
+`BoxTrussOptions` says the same thing in its shape: everything shared with a flat
+truss is *nested* as `Sides` (a `FlatTrussOptions`) rather than copied field by
+field, and only `LacingType` and `FlipLacing` are added. Lacing defaults to
+Warren with verticals — a strut at every panel point and a diagonal per panel —
+because a lacing face holds two chords both in line and at their spacing, and it
+takes both members to do both. `Vierendeel` gives struts alone, for when a deck
+or roof sheet does the bracing.
+
+`Strut` and `Lacing` are their own `TrussMemberRole`s, apart from `Vertical` and
+`Diagonal`, because they are sized for a different job.
+
+Chords can be handed over in any order and drawn in either direction. Each is
+turned to run the way the first top chord does, and with two and two, the bottom
+chords are matched to the top chord each sits under — judged at mid-length,
+since chords drawn to a point at the ends say nothing there. Paired wrongly,
+both side faces would run corner to corner through the middle of the box.
+
+Where two chords of a face meet at an end — twin top chords drawn to a point
+over one support — that face gets no end member and no end diagonal there, for
+the reason a flat truss does not. `EndsSuppressed` and a note say so.
+
+Not generated: cross-frames (diagonals *across* the section at a panel point).
+Whether a box needs diaphragms, and where, is a torsion question for the
+engineer, and the panel points are all there to draw them between.
+
+## SurfaceGrid
+
+Straight members over one surface — quad, triangulated or diagrid — with every
+node on the surface. The input is a single surface, or instead the two to four
+curves round the outside of an area, for a stick model that has no surfaces in
+it (the surface between them is Rhino's edge surface, used to place nodes and
+never returned).
+
+**A structured grid, not a mesher, and deliberately.** A mesher copes with any
+shape and returns something with no rows, no columns, and a result that shifts
+between Rhino releases. This returns a layout that can be predicted before
+running it and addressed afterwards. Three layers, kept apart because the next
+tools need them apart:
+
+1. **Where the grid lines go** is decided along the surface's edges by the same
+   `StationLayout` that sets out a truss: the two edges running in U are its
+   chords for U, the two in V for V. So a division is measured by *length*
+   rather than by surface parameter — which bunches wherever a surface was built
+   unevenly — and a kink or a snap point on an edge becomes a grid line exactly
+   as it becomes a panel point on a chord. `Divisions`/`Spacing`, `Strictness`
+   and the zero-from-both rule mean what they mean on FlatTruss, once per
+   direction.
+2. **The nodes** are a `Lattice`. Each grid line's parameter is taken from both
+   edges it runs between and blended across, so on a fan or a taper the line
+   lands exactly on its station at either edge; the surface is then evaluated
+   there.
+3. **The members** are a `GridPattern` read off the lattice by index — the truss
+   web trick played along two axes.
+
+| | |
+|---|---|
+| `Quad` | members along every grid line, both ways |
+| `Triangulated` | quad, plus one diagonal per cell: `OneWay`, `Alternating` (diamonds), or `Shorter`, cell by cell, which on a warped or sheared surface folds each cell least |
+| `Diagrid` | diagonals only, **between every other node**, closed round the outside by edge members. Both diagonals of every cell would cross in mid-air with no node at the crossing — two structures that happen to overlap — whereas taken chequer-board fashion members only ever meet at nodes. It needs an even count each way to close, and is given one more when asked for an odd one (`RaisedU`/`RaisedV`, and a note). `Flip` shifts the chequer-board off the corners |
+
+Members carry a `GridMemberRole` — `U`, `V`, `Diagonal`, and `Edge` apart from
+the rest because an edge beam is sized differently — plus the grid line they lie
+along, so a whole beam can be put back together from its segments without
+comparing coordinates.
+
+**`Lattice` is public, and is the part meant to outlive this tool.** It knows
+nothing about surfaces: nodes addressed by `(i, j)`, `LineU(j)`/`LineV(i)` as
+whole ordered lines, `Cells` with corners and an `Area`, wrap flags, and an
+`IsPresent` mask that is always true today. A floor grillage is the planned
+second user: beam `k` is grid line `k`, already whole; a load take-down is the
+cells, each with an area and four corners to share it between; and a grid
+clipped to a floor's outline is the same lattice with positions absent. That
+will bring a second *source* of node positions — two world directions across a
+plate rather than a surface's own — and nothing above the lattice should need to
+change.
+
+Closed surfaces wrap: round a tower there is a seam in the surface and none in
+the structure — no edge members there, no second set of nodes, and the same
+valence either side. Where an edge collapses to a point — a dome's apex — the
+whole row stacked on it is referred to by one index, so there is one node at the
+pole and no member drawn twice.
+
+A **trimmed** surface is gridded whole, over the surface underneath the trim,
+with a warning: clipping arrives with the grillage. A **polysurface** is refused,
+since its faces share no pair of directions. A snap point has to lie on an
+**edge**: one out in the middle would have to move a line both ways at once, so
+it is counted on `OffEdgeSnapPoints` and reported instead.
+
+## BeamInfill
+
+Takes a floor's worth of primary beams — window-selected, in any order, not
+split where they cross — and fills every panel they enclose with evenly spaced
+members. Nothing is said about which beams bound which panel: wherever the
+beams close a loop, that loop is a panel.
+
+Three steps, and the split between them is the design:
+
+1. **Finding the panels is done flat**, on the plane that best fits the beams,
+   because enclosure is a flat question. Fitted rather than assumed to be world
+   XY, so a pitched roof is searched square-on and a wall of rails between posts
+   works at all.
+2. **Building each panel goes back to the beams themselves.** Every stretch of
+   an outline is cut from the curve it came from, at the parameters the flat
+   search reported, so a member lands on the beam rather than on its shadow —
+   purlins between pitched rafters sit on the rafters.
+3. **Filling is the truss rule turned on its side.** The two supporting sides
+   are divided into the same number of equal parts along their own length, and
+   member `i` joins point `i` of one to point `i` of the other. In a rectangle
+   that is parallel members at even centres; in a splayed bay they fan, dividing
+   both beams evenly, which never runs a member into a side.
+
+Members run **the long way** across each panel — the usual arrangement, with
+secondaries spanning the longer dimension onto primaries spanning the shorter —
+judged per panel on the mean of each pair of opposite sides. `Flip` runs them
+the short way instead. A square has no long way, so it goes to whichever pair
+lies closer to world X: arbitrary, but the same in every panel, where leaving
+it to corner order would chequer a floor of square bays.
+
+`Divisions` is bays per panel, so one more than the members placed. `Spacing`
+is the same question by length: each panel divides the longer of its two
+supporting sides by it and rounds, so one value suits a floor of uneven bays.
+`Divisions` overrides it, exactly as on FlatTruss. Zero from both finds the
+panels and leaves them empty, which is the way to check the selection reads as
+intended.
+
+A side is not a beam. Corners are where the outline *turns* by more than
+`CornerAngle` (30° by default), so two beams in line either side of a column are
+one side, and so is a faceted or curved edge beam.
+
+**Only four-sided panels are filled.** Members go between opposite sides, and a
+triangle or an L has none. Any rule for those would be a guess at a decision
+that is the engineer's, so the panel is handed back on `SkippedPanels` — as
+geometry, because "three were skipped" is no help on a floor of two hundred.
+One beam drawn across it usually turns it into panels that can be filled.
+
+| | |
+|---|---|
+| `Panels` | each with its `Outline`, `Corners`, `Members`, and `StartNodes` / `EndNodes` paired with the members by index |
+| `Nodes` | where members land on the beams, merged where two panels share one — the points to split the primaries at |
+| `SkippedPanels` | outlines found and left empty: `IrregularPanels` (not four sides) and `PanelsWithOpenings` (a separate loop inside) |
+| `LoosePanels` | beams that cross seen square-on but do not touch in space — nearly always a selection spanning two levels |
+| `EdgeOnBeams` | curves square to the floor, ignored: columns caught in the window selection |
+
+The picked beams are never split or moved. They are the user's model; `Nodes`
+is there so that splitting them is a decision taken knowingly.
 
 ## Rules
 

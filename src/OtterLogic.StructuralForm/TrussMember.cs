@@ -4,7 +4,7 @@ using Rhino.Geometry;
 namespace OtterLogic.StructuralForm;
 
 /// <summary>
-/// What part of the truss a member belongs to.
+/// What part of a truss a member belongs to, flat or box.
 /// <para>
 /// Deliberately finer-grained than the four structural families: verticals and
 /// diagonals are split apart because they are sized and specified separately,
@@ -24,6 +24,21 @@ public enum TrussMemberRole
     Diagonal,
 
     EndPost,
+
+    /// <summary>
+    /// Box trusses only. Member square across a lacing face — between the two
+    /// top chords, or the two bottom ones — joining the pair of nodes at one
+    /// station. What a vertical is to a side face.
+    /// </summary>
+    Strut,
+
+    /// <summary>
+    /// Box trusses only. Member running across a panel of a lacing face, from
+    /// one chord to its twin. What a diagonal is to a side face, and kept apart
+    /// from it because the two are sized for different jobs: one carries shear,
+    /// the other holds the chords in line.
+    /// </summary>
+    Lacing,
 }
 
 /// <summary>
@@ -44,6 +59,8 @@ public static class TrussMemberRoles
         TrussMemberRole.Vertical,
         TrussMemberRole.Diagonal,
         TrussMemberRole.EndPost,
+        TrussMemberRole.Strut,
+        TrussMemberRole.Lacing,
     };
 
     /// <summary>"EndPost" as "End post".</summary>
