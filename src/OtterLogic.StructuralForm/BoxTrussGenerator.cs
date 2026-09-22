@@ -102,22 +102,26 @@ public static class BoxTrussGenerator
             .Select(chord => new StationLayout.ChordRuler(chord, sides.SnapTolerance, sides.MeasureOnPlan))
             .ToArray();
 
-        double[] stations = StationLayout.Resolve(
+        // Per chord, paired by index: a point picked on one chord fixes that
+        // chord's node of its panel point and leaves the others to follow.
+        double[][] stations = StationLayout.ResolvePaired(
             rulers,
             new StationRequest(
                 sides.Divisions, sides.Spacing, sides.Strictness,
                 sides.AdditionalSnapPoints, sides.SnapTolerance),
             out int unusedSnapPoints, out int offChordSnapPoints);
 
+        int count = stations[0].Length;
+
         Point3d[][] nodes = rulers
-            .Select(ruler => stations.Select(ruler.PointAtStation).ToArray())
+            .Select((ruler, c) => stations[c].Select(ruler.PointAtStation).ToArray())
             .ToArray();
 
         var web = new WebBuilder(sides.SnapTolerance);
 
         for (int c = 0; c < chords.Length; c++)
             web.AddChord(
-                nodes[c], c * stations.Length,
+                nodes[c], c * count,
                 c < tops.Length ? TrussMemberRole.TopChord : TrussMemberRole.BottomChord);
 
         bool suppressed = false;
@@ -131,7 +135,7 @@ public static class BoxTrussGenerator
             suppressed |= meetAtStart || meetAtEnd;
 
             web.AddFace(
-                nodes[a], a * stations.Length, nodes[b], b * stations.Length,
+                nodes[a], a * count, nodes[b], b * count,
                 type, flip, sides.GenerateEndPosts, meetAtStart, meetAtEnd, roles);
         }
 

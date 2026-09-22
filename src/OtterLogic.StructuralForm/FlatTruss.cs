@@ -6,7 +6,8 @@ namespace OtterLogic.StructuralForm;
 /// A generated truss: paired chord nodes plus the members between them.
 /// <para>
 /// Node <c>i</c> of <see cref="TopNodes"/> and node <c>i</c> of
-/// <see cref="BottomNodes"/> sit at the same station along their chords, which
+/// <see cref="BottomNodes"/> are one panel point of the truss — at the same
+/// station along their chords unless a snap point on each moved them apart, which
 /// is what makes the web patterns expressible as index arithmetic.
 /// </para>
 /// </summary>

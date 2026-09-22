@@ -11,9 +11,18 @@ namespace OtterLogic.StructuralForm;
 /// </para>
 /// <para>
 /// Nodes sit at <em>stations</em> — positions running 0 to 1 along a chord,
-/// measured as a fraction of its length. One list, shared by both chords, so
-/// top node <c>i</c> and bottom node <c>i</c> sit at the same station and every
-/// web pattern reduces to index arithmetic.
+/// measured as a fraction of its length. One list per chord, paired by index,
+/// so top node <c>i</c> and bottom node <c>i</c> are the same panel point and
+/// every web pattern reduces to index arithmetic.
+/// <para>
+/// Per chord rather than one shared list, because a snap point belongs to the
+/// chord it was picked on. Seven points along the top chord and seven along the
+/// bottom, not quite above each other, are seven panel points with a leaning
+/// vertical at each — not fourteen, which is what pooling them gave: every
+/// point became a station on <em>both</em> chords, so each arrived twice, a
+/// hand's width apart. A panel point only one chord pins leaves the others at
+/// the same station, so a lone chord vertex still squares the truss under it.
+/// </para>
 /// </para>
 /// <para>
 /// Which length is <see cref="FlatTrussOptions.MeasureOnPlan"/>'s to say. Along
@@ -72,19 +81,23 @@ public static class FlatTrussGenerator
         var topRuler = new StationLayout.ChordRuler(top, options.SnapTolerance, options.MeasureOnPlan);
         var bottomRuler = new StationLayout.ChordRuler(bottom, options.SnapTolerance, options.MeasureOnPlan);
 
-        double[] stations = StationLayout.Resolve(
+        // Per chord, paired by index: a point picked on the top chord fixes the
+        // top node of its panel point and leaves the bottom one to follow.
+        double[][] stations = StationLayout.ResolvePaired(
             new[] { topRuler, bottomRuler },
             new StationRequest(
                 options.Divisions, options.Spacing, options.Strictness,
                 options.AdditionalSnapPoints, options.SnapTolerance),
             out int unusedSnapPoints, out int offChordSnapPoints);
 
-        var topNodes = new Point3d[stations.Length];
-        var bottomNodes = new Point3d[stations.Length];
-        for (int i = 0; i < stations.Length; i++)
+        int count = stations[0].Length;
+
+        var topNodes = new Point3d[count];
+        var bottomNodes = new Point3d[count];
+        for (int i = 0; i < count; i++)
         {
-            topNodes[i] = topRuler.PointAtStation(stations[i]);
-            bottomNodes[i] = bottomRuler.PointAtStation(stations[i]);
+            topNodes[i] = topRuler.PointAtStation(stations[0][i]);
+            bottomNodes[i] = bottomRuler.PointAtStation(stations[1][i]);
         }
 
         // Chords that converge to a shared point need no post there.
@@ -95,9 +108,9 @@ public static class FlatTrussGenerator
         // them in, which is what the members' indices refer to.
         var web = new WebBuilder(options.SnapTolerance);
         web.AddChord(topNodes, 0, TrussMemberRole.TopChord);
-        web.AddChord(bottomNodes, stations.Length, TrussMemberRole.BottomChord);
+        web.AddChord(bottomNodes, count, TrussMemberRole.BottomChord);
         web.AddFace(
-            topNodes, 0, bottomNodes, stations.Length,
+            topNodes, 0, bottomNodes, count,
             options.Type, options.Flip, options.GenerateEndPosts, meetAtStart, meetAtEnd,
             new FaceRoles(TrussMemberRole.Vertical, TrussMemberRole.Diagonal, TrussMemberRole.EndPost));
 

@@ -21,8 +21,21 @@ out loud in `Notes` (a `FormNote`, shared by all of them).
 ## FlatTruss
 
 Nodes sit at *stations* — positions along the chords measured as a fraction of
-length, shared by both chords, so top node `i` and bottom node `i` sit at the
-same station and every web pattern reduces to index arithmetic.
+length. One list **per chord**, paired by index, so top node `i` and bottom node
+`i` are the same panel point and every web pattern reduces to index arithmetic.
+
+Per chord rather than pooled, because a snap point belongs to the chord it was
+picked on. Seven points along the top chord and seven along the bottom, not
+quite above each other, are seven panel points with a leaning vertical at each —
+not fourteen. Pooling them gave fourteen: every point became a station on *both*
+chords, so each arrived twice, a hand's width apart, with a vertical between the
+halves of the pair.
+
+Points on different chords are read as one panel point when each is nearer to
+the other than to the next point along its own chord — a local judgement with no
+scale in it, so it does not shift with the division count. Where only one chord
+pins a panel point the others stay at that same station, which is how a lone
+chord vertex still squares the truss under it.
 
 `MeasureOnPlan` says which length. **Off by default**, so each chord is divided
 along itself: pure curve geometry, which is the only reading that works for a
