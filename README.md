@@ -7,7 +7,7 @@ Trusses and structural layouts for [OtterLogic](https://github.com/Otter-Logic/R
 A **domain**: it owns its types *and* its logic. `TrussType`, `FlatTrussOptions`,
 `FlatTruss` and `FlatTrussGenerator` live together because they change together.
 
-Four tools so far, built the same way: the user draws the geometry that governs,
+Five tools so far, built the same way: the user draws the geometry that governs,
 the tool does the setting-out, and anything that quietly did not work is said
 out loud in `Notes` (a `FormNote`, shared by all of them).
 
@@ -16,6 +16,7 @@ out loud in `Notes` (a `FormNote`, shared by all of them).
 | [FlatTruss](#flattruss) | bracing between a top and a bottom chord |
 | [BoxTruss](#boxtruss) | the same in 3D: a triangular or box truss on three or four chords |
 | [SurfaceGrid](#surfacegrid) | a quad, triangulated or diagrid layout over a surface, on a reusable `Lattice` |
+| [SpaceTruss](#spacetruss) | a double-layer space truss on a surface grid: pyramids, or flat trusses both ways |
 | [BeamInfill](#beaminfill) | secondary members in every panel a floor's primary beams enclose |
 
 ## FlatTruss
@@ -221,13 +222,28 @@ comparing coordinates.
 **`Lattice` is public, and is the part meant to outlive this tool.** It knows
 nothing about surfaces: nodes addressed by `(i, j)`, `LineU(j)`/`LineV(i)` as
 whole ordered lines, `Cells` with corners and an `Area`, wrap flags, and an
-`IsPresent` mask that is always true today. A floor grillage is the planned
-second user: beam `k` is grid line `k`, already whole; a load take-down is the
-cells, each with an area and four corners to share it between; and a grid
-clipped to a floor's outline is the same lattice with positions absent. That
-will bring a second *source* of node positions — two world directions across a
-plate rather than a surface's own — and nothing above the lattice should need to
-change.
+`IsPresent` mask. SpaceTruss is its second user already — the bottom layer of a
+truss is a lattice too, read by the same positions — and a floor grillage is
+the planned third: beam `k` is grid line `k`, already whole, and a load
+take-down is the cells, each with an area and four corners to share it between.
+That will bring a second *source* of node positions — two world directions
+across a plate rather than a surface's own — and nothing above the lattice
+should need to change.
+
+The mask is what **`ClipToTrim`** fills in. Off, a **trimmed** surface is
+gridded whole, over the surface underneath the trim, with a warning. On, a node
+that falls in an opening or outside the trimmed edge is absent, every member
+that ran to it goes with it, and so does any member whose middle crosses an
+opening — a member is left whole or left out, never cut at the rim, because a
+member cut there would end where there is no node. Rows and columns keep their
+numbering either way, so a definition reading the grid by position still can.
+The test is asked in 3D against the trimmed face rather than in surface
+parameters, because the grid is built on a NURBS copy whose parameterisation
+need not match the face's own; a point is the same point on both.
+`ClippedNodes` and `ClippedMembers` say what went.
+
+Every node also carries the surface's unit **normal**, on `Normals`, which is
+what a second layer is offset along.
 
 Closed surfaces wrap: round a tower there is a seam in the surface and none in
 the structure — no edge members there, no second set of nodes, and the same
@@ -235,11 +251,51 @@ valence either side. Where an edge collapses to a point — a dome's apex — th
 whole row stacked on it is referred to by one index, so there is one node at the
 pole and no member drawn twice.
 
-A **trimmed** surface is gridded whole, over the surface underneath the trim,
-with a warning: clipping arrives with the grillage. A **polysurface** is refused,
-since its faces share no pair of directions. A snap point has to lie on an
-**edge**: one out in the middle would have to move a line both ways at once, so
-it is counted on `OffEdgeSnapPoints` and reported instead.
+A **polysurface** is refused, since its faces share no pair of directions. A
+snap point has to lie on an **edge**: one out in the middle would have to move
+a line both ways at once, so it is counted on `OffEdgeSnapPoints` and reported
+instead.
+
+## SpaceTruss
+
+Takes a `SurfaceGrid` — made first, with everything above already decided —
+and builds a double-layer truss on it: the grid is the top layer, member for
+member; a second layer sits a given `Depth` under it; a web joins the two.
+Made from the grid rather than from the surface again so that the truss and
+the grid cannot disagree about where a node is, and so that the openings
+clipped out of the grid are clipped out of the truss.
+
+`Type` is the one decision, and it says where the second layer's nodes go:
+
+| | |
+|---|---|
+| `Offset` *(default)* | a node under the **centre of every cell**, joined to the cell's four corners: a pyramid per cell, and the apexes as a quad grid of their own. The space frame in its usual form, with no verticals and no pattern to choose, since the pyramids are the whole web. Under a diagrid the same rule puts a node under the centre of every diamond and the second layer comes out a diagrid of the other parity |
+| `Aligned` | a node under **every node**, the grid's own pattern between them, and a flat truss along every grid line — rows and columns of a quad or triangulated grid, the diagonal runs of a diagrid — through the same `WebBuilder` a flat truss uses. `Web`, `FlipWeb` and `GenerateEndPosts` mean what `FlatTrussOptions` says they mean, with posts wherever a line ends: round the outside, and at the rim of an opening, which splits a line into runs that are each a truss of their own. A line round a tower is one closed run, with a vertical at every node and no ends |
+
+A pole is one node however many positions sit on it, and the second layer is
+welded the same way; a pyramid against a pole is three members, not four with
+two on top of each other.
+
+`DepthAlong` is which way the second layer is offset. `SurfaceNormal`
+*(default)* keeps the truss the same depth everywhere and follows the surface —
+a dome's second layer is a smaller dome. The side is decided **once for the
+whole surface**, from the mean of its normals: down where the surface faces up
+on the whole, whichever way it happened to be built, because a rule read node
+by node would turn a dome's layer inside out part way down where its normals
+go level. A surface that stands on end has no underside, so its layer goes on
+the side it faces and a note says so; `FlipDepth` puts it on the other, and
+serves for the roof that wanted its truss above. `Vertical` drops the layer
+straight down instead, so every web member is plumb — and warns on a surface
+standing on end, where that puts the second layer in the surface's own plane.
+
+Every member is a `SpaceTrussMember` with a `TrussMemberRole` — the flat
+truss's five — and, for a chord, a `GridRole` saying which part of its layer's
+grid it is, so an edge beam sized apart on the grid can be sized apart on the
+truss. Node indices run through the top layer first, then the bottom, and
+`BottomLattice` is the bottom layer by position.
+
+Not generated: cross-frames or bracing in the plane of the bottom layer beyond
+what the pattern gives; whether a space frame needs them is the engineer's.
 
 ## BeamInfill
 

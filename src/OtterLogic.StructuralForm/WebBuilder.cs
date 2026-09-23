@@ -20,31 +20,65 @@ internal readonly record struct FaceRoles(
 /// which is why the list and the seen-set belong to the builder rather than to
 /// a face: the chord two faces share is added once.
 /// </para>
+/// <para>
+/// Chords are handed over as sequences of indices into one node list rather
+/// than as runs of points, because a space truss's chords are the lines of a
+/// lattice — every fifth node, say — and the face between a line of the top
+/// layer and the line under it is the same face a flat truss has. The builder
+/// looks a node up; it does not care how the caller numbered them.
+/// </para>
 /// </summary>
 internal sealed class WebBuilder
 {
+    private readonly IReadOnlyList<Point3d> _nodes;
     private readonly double _tolerance;
+    private readonly Func<Line, bool>? _excluded;
     private readonly List<TrussMember> _members = new();
     private readonly HashSet<(int, int)> _seen = new();
 
-    internal WebBuilder(double tolerance) => _tolerance = tolerance;
+    /// <param name="nodes">Every node a member can refer to; member indices are indices into it.</param>
+    /// <param name="excluded">
+    /// A member to leave out however it was arrived at — one crossing an
+    /// opening in a clipped grid. Null leaves every member in.
+    /// </param>
+    internal WebBuilder(IReadOnlyList<Point3d> nodes, double tolerance, Func<Line, bool>? excluded = null)
+    {
+        _nodes = nodes;
+        _tolerance = tolerance;
+        _excluded = excluded;
+    }
 
     internal List<TrussMember> Members => _members;
 
-    private void Add(int startNode, int endNode, Point3d start, Point3d end, TrussMemberRole role)
+    /// <summary>How many members were left out for <c>excluded</c> saying so.</summary>
+    internal int Excluded { get; private set; }
+
+    internal void Add(int startNode, int endNode, TrussMemberRole role)
     {
+        if (startNode == endNode) return;
+
         var key = startNode < endNode ? (startNode, endNode) : (endNode, startNode);
         if (!_seen.Add(key)) return;
+
+        Point3d start = _nodes[startNode], end = _nodes[endNode];
         if (start.DistanceTo(end) <= _tolerance) return;   // drop degenerate members
 
-        _members.Add(new TrussMember(new Line(start, end), role, startNode, endNode));
+        var line = new Line(start, end);
+
+        if (_excluded is not null && _excluded(line))
+        {
+            Excluded++;
+            return;
+        }
+
+        _members.Add(new TrussMember(line, role, startNode, endNode));
     }
 
-    /// <summary>One chord, split at every node. <paramref name="offset"/> is where its nodes start in the truss's node list.</summary>
-    internal void AddChord(Point3d[] nodes, int offset, TrussMemberRole role)
+    /// <summary>One chord, split at every node.</summary>
+    internal void AddChord(IReadOnlyList<int> nodes, TrussMemberRole role)
     {
-        for (int i = 0; i < nodes.Length - 1; i++)
-            Add(offset + i, offset + i + 1, nodes[i], nodes[i + 1], role);
+        for (int i = 0; i < nodes.Count - 1; i++)
+            Add(nodes[i], nodes[i + 1], role);
     }
 
     /// <summary>
@@ -52,18 +86,31 @@ internal sealed class WebBuilder
     /// chord plays in a flat truss, which only matters to which way a diagonal
     /// is said to fall.
     /// </summary>
+    /// <param name="closed">
+    /// The chords run round in a ring — a truss round a tower — so the last
+    /// node is followed by the first. There are then no ends: no end posts, no
+    /// meeting at them, and a vertical at every node rather than every
+    /// interior one.
+    /// </param>
     internal void AddFace(
-        Point3d[] a, int aOffset,
-        Point3d[] b, int bOffset,
+        IReadOnlyList<int> a,
+        IReadOnlyList<int> b,
         TrussType type, bool flip, bool endPosts,
         bool meetAtStart, bool meetAtEnd,
-        FaceRoles roles)
+        FaceRoles roles,
+        bool closed = false)
     {
-        int panels = a.Length - 1;
+        if (a.Count != b.Count)
+            throw new ArgumentException("A face needs the same number of nodes on each chord.", nameof(b));
 
-        void AddVertical(int i) => Add(aOffset + i, bOffset + i, a[i], b[i], roles.Vertical);
-        void AddDown(int i) => Add(aOffset + i, bOffset + i + 1, a[i], b[i + 1], roles.Diagonal);
-        void AddUp(int i) => Add(bOffset + i, aOffset + i + 1, b[i], a[i + 1], roles.Diagonal);
+        int count = a.Count;
+        int panels = closed ? count : count - 1;
+
+        int Next(int i) => closed ? (i + 1) % count : i + 1;
+
+        void AddVertical(int i) => Add(a[i], b[i], roles.Vertical);
+        void AddDown(int i) => Add(a[i], b[Next(i)], roles.Diagonal);
+        void AddUp(int i) => Add(b[i], a[Next(i)], roles.Diagonal);
 
         bool verticals = type is TrussType.Vierendeel
             or TrussType.WarrenWithVerticals
@@ -72,7 +119,7 @@ internal sealed class WebBuilder
             or TrussType.CrossBraced;
 
         if (verticals)
-            for (int i = 1; i < panels; i++)
+            for (int i = closed ? 0 : 1; i < panels; i++)
                 AddVertical(i);
 
         // Flip mirrors each diagonal within its own panel, which is the same as
@@ -92,7 +139,7 @@ internal sealed class WebBuilder
             // which is the chord member itself drawn a second time. The seen-set
             // does not catch it: the same line, but between two different node
             // indices.
-            if ((meetAtStart && i == 0) || (meetAtEnd && i == panels - 1))
+            if (!closed && ((meetAtStart && i == 0) || (meetAtEnd && i == panels - 1)))
                 continue;
 
             switch (type)
@@ -126,15 +173,15 @@ internal sealed class WebBuilder
             }
         }
 
-        if (endPosts)
+        if (endPosts && !closed)
         {
             // Where the chords meet, the post would collapse onto the shared
             // point and clash with the chords running into it.
             if (!meetAtStart)
-                Add(aOffset, bOffset, a[0], b[0], roles.End);
+                Add(a[0], b[0], roles.End);
 
             if (!meetAtEnd)
-                Add(aOffset + panels, bOffset + panels, a[panels], b[panels], roles.End);
+                Add(a[panels], b[panels], roles.End);
         }
     }
 }

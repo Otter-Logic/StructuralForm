@@ -27,12 +27,14 @@ namespace OtterLogic.StructuralForm;
 /// <item><description>
 /// <em>The nodes</em> are a <see cref="Lattice"/>: each grid line's parameter is
 /// taken from both edges it runs between and blended across the surface, then
-/// the surface is evaluated there, so every node sits on it.
+/// the surface is evaluated there, so every node sits on it. On a trimmed
+/// surface with <see cref="SurfaceGridOptions.ClipToTrim"/>, the positions
+/// that fall in an opening or outside the trimmed edge are marked absent.
 /// </description></item>
 /// <item><description>
 /// <em>The members</em> are a <see cref="GridPattern"/> read off the lattice by
 /// index. Nothing in this step looks at geometry except to drop a member with
-/// no length.
+/// no length, or one whose middle crosses an opening.
 /// </description></item>
 /// </list>
 /// <para>
@@ -49,7 +51,7 @@ public static class SurfaceGridGenerator
     {
         if (surface is null) throw new ArgumentNullException(nameof(surface));
 
-        return Build(surface, options ?? new SurfaceGridOptions(), trimmed: false);
+        return Build(surface, options ?? new SurfaceGridOptions(), face: null);
     }
 
     /// <summary>
@@ -71,7 +73,8 @@ public static class SurfaceGridGenerator
 
         BrepFace face = brep.Faces[0];
 
-        return Build(face.UnderlyingSurface(), options ?? new SurfaceGridOptions(), trimmed: !face.IsSurface);
+        // An untrimmed face is the surface, and there is nothing to clip to.
+        return Build(face.UnderlyingSurface(), options ?? new SurfaceGridOptions(), face.IsSurface ? null : face);
     }
 
     /// <summary>
@@ -108,7 +111,7 @@ public static class SurfaceGridGenerator
                 + "round the outside of the area to grid.",
                 nameof(edges));
 
-        return Build(patch.Faces[0].UnderlyingSurface(), options, trimmed: false);
+        return Build(patch.Faces[0].UnderlyingSurface(), options, face: null);
     }
 
     private static bool ClosesALoop(IReadOnlyList<Curve> edges, double tolerance)
@@ -118,7 +121,8 @@ public static class SurfaceGridGenerator
         return joined.Length == 1 && joined[0].IsClosed;
     }
 
-    private static SurfaceGrid Build(Surface picked, SurfaceGridOptions options, bool trimmed)
+    /// <param name="face">The trimmed face the surface came from, or null when there is no trim.</param>
+    private static SurfaceGrid Build(Surface picked, SurfaceGridOptions options, BrepFace? face)
     {
         Validate(options);
 
@@ -159,13 +163,28 @@ public static class SurfaceGridGenerator
         double[] stationsV = Stations(
             edgesV, options.DivisionsV, options.SpacingV, pointsV, options, even, out int unusedV, out int raisedV);
 
-        Lattice lattice = PlaceNodes(surface, edgesU, edgesV, stationsU, stationsV, wrapU, wrapV);
+        PlaceNodes(
+            surface, edgesU, edgesV, stationsU, stationsV, wrapU, wrapV,
+            out Point3d[] nodes, out Vector3d[] normals, out int countU, out int countV);
+
+        // Clipping happens on the nodes, before any member is considered: a
+        // position in an opening has no node, and a member is only ever drawn
+        // between nodes that are there.
+        TrimMask? trim = face is not null && options.ClipToTrim ? new TrimMask(face, options.Tolerance) : null;
+        bool[]? present = trim is null ? null : nodes.Select(node => !trim.Excludes(node)).ToArray();
+
+        var lattice = new Lattice(nodes, countU, countV, wrapU, wrapV, present);
+
+        FixPoleNormals(lattice, normals);
 
         int[] canonical = WeldPoles(lattice, edgesU, edgesV);
-        List<GridMember> members = DrawPattern(lattice, canonical, options);
+        List<GridMember> members = DrawPattern(lattice, canonical, options, trim, out int clippedMembers);
 
         return new SurfaceGrid(
-            lattice, members, options, trimmed, offEdge, unusedU + unusedV, raisedU, raisedV);
+            lattice, normals, canonical, members, options, surface, trim,
+            trimmed: face is not null,
+            offEdge, unusedU + unusedV, raisedU, raisedV,
+            clippedNodes: lattice.AbsentCount, clippedMembers);
     }
 
     private static void Validate(SurfaceGridOptions options)
@@ -296,7 +315,8 @@ public static class SurfaceGridGenerator
     }
 
     /// <summary>
-    /// Evaluate the surface at every crossing of the grid lines.
+    /// Evaluate the surface at every crossing of the grid lines, and read its
+    /// normal there.
     /// <para>
     /// A grid line in V sits at station <c>s</c> along <em>both</em> U edges,
     /// and on a surface whose edges differ — a fan, a taper — that is a
@@ -306,14 +326,18 @@ public static class SurfaceGridGenerator
     /// its own to offer, so it borrows the opposite edge's.
     /// </para>
     /// </summary>
-    private static Lattice PlaceNodes(
+    private static void PlaceNodes(
         NurbsSurface surface,
         StationLayout.ChordRuler?[] edgesU,
         StationLayout.ChordRuler?[] edgesV,
         double[] stationsU,
         double[] stationsV,
         bool wrapU,
-        bool wrapV)
+        bool wrapV,
+        out Point3d[] nodes,
+        out Vector3d[] normals,
+        out int countU,
+        out int countV)
     {
         static double[][] Parameters(StationLayout.ChordRuler?[] edges, double[] stations)
         {
@@ -331,10 +355,11 @@ public static class SurfaceGridGenerator
         double[][] v = Parameters(edgesV, stationsV);
 
         // A direction that wraps has its last station on top of its first.
-        int countU = wrapU ? stationsU.Length - 1 : stationsU.Length;
-        int countV = wrapV ? stationsV.Length - 1 : stationsV.Length;
+        countU = wrapU ? stationsU.Length - 1 : stationsU.Length;
+        countV = wrapV ? stationsV.Length - 1 : stationsV.Length;
 
-        var nodes = new Point3d[countU * countV];
+        nodes = new Point3d[countU * countV];
+        normals = new Vector3d[countU * countV];
 
         for (int j = 0; j < countV; j++)
             for (int i = 0; i < countU; i++)
@@ -342,12 +367,56 @@ public static class SurfaceGridGenerator
                 double across = stationsV[j];
                 double along = stationsU[i];
 
-                nodes[j * countU + i] = surface.PointAt(
-                    u[0][i] + (u[1][i] - u[0][i]) * across,
-                    v[0][j] + (v[1][j] - v[0][j]) * along);
+                double su = u[0][i] + (u[1][i] - u[0][i]) * across;
+                double sv = v[0][j] + (v[1][j] - v[0][j]) * along;
+
+                nodes[j * countU + i] = surface.PointAt(su, sv);
+
+                Vector3d normal = surface.NormalAt(su, sv);
+                normals[j * countU + i] = normal.Unitize() ? normal : Vector3d.Zero;
+            }
+    }
+
+    /// <summary>
+    /// Give the nodes on a pole the normal of their neighbours.
+    /// <para>
+    /// At a pole the surface has no normal — every direction across it is a
+    /// direction along the collapsed edge — and what comes back is zero or
+    /// noise. The nodes either side of it are on the same surface a hair
+    /// away, so their mean is the normal the pole would have had, and it is
+    /// what a layer offset from the surface wants there: a dome's apex node
+    /// dropped straight down, not left where it is.
+    /// </para>
+    /// </summary>
+    private static void FixPoleNormals(Lattice lattice, Vector3d[] normals)
+    {
+        static bool Missing(Vector3d normal) => !normal.IsValid || normal.IsTiny();
+
+        var fixedNormals = (Vector3d[])normals.Clone();
+
+        for (int j = 0; j < lattice.CountV; j++)
+            for (int i = 0; i < lattice.CountU; i++)
+            {
+                int k = lattice.Index(i, j);
+                if (!Missing(normals[k])) continue;
+
+                Vector3d sum = Vector3d.Zero;
+
+                foreach ((int di, int dj) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                {
+                    int ni = i + di, nj = j + dj;
+
+                    if (!lattice.WrapU && (ni < 0 || ni >= lattice.CountU)) continue;
+                    if (!lattice.WrapV && (nj < 0 || nj >= lattice.CountV)) continue;
+
+                    Vector3d neighbour = normals[lattice.Index(ni, nj)];
+                    if (!Missing(neighbour)) sum += neighbour;
+                }
+
+                fixedNormals[k] = sum.Unitize() ? sum : Vector3d.ZAxis;
             }
 
-        return new Lattice(nodes, countU, countV, wrapU, wrapV);
+        Array.Copy(fixedNormals, normals, normals.Length);
     }
 
     /// <summary>
@@ -389,11 +458,20 @@ public static class SurfaceGridGenerator
     /// one b–d, and every pattern with diagonals is a rule for which of the two
     /// a cell gets.
     /// </para>
+    /// <para>
+    /// Internal rather than private because a space truss's second layer is
+    /// the same pattern drawn over a second lattice, and a second copy of the
+    /// rules is how the two layers would come to differ.
+    /// </para>
     /// </summary>
-    private static List<GridMember> DrawPattern(Lattice lattice, int[] canonical, SurfaceGridOptions options)
+    /// <param name="trim">What to leave out for crossing an opening, or null.</param>
+    /// <param name="clipped">How many members were left out for that reason.</param>
+    internal static List<GridMember> DrawPattern(
+        Lattice lattice, int[] canonical, SurfaceGridOptions options, TrimMask? trim, out int clipped)
     {
         var members = new List<GridMember>();
         var seen = new HashSet<(int, int)>();
+        int crossing = 0;
 
         void Add(int start, int end, GridMemberRole role, bool alongU, int gridLine)
         {
@@ -403,8 +481,17 @@ public static class SurfaceGridGenerator
             if (start == end) return;
             if (!seen.Add(start < end ? (start, end) : (end, start))) return;
 
+            // A member is only ever drawn between nodes that are there.
+            if (!lattice.IsPresent(start) || !lattice.IsPresent(end)) return;
+
             var line = new Line(lattice.Nodes[start], lattice.Nodes[end]);
             if (line.Length <= options.Tolerance) return;   // drop degenerate members
+
+            if (trim is not null && trim.Excludes(line))
+            {
+                crossing++;
+                return;
+            }
 
             members.Add(new GridMember(line, role, start, end, alongU, gridLine));
         }
@@ -429,7 +516,11 @@ public static class SurfaceGridGenerator
                         EdgeColumn(i) ? GridMemberRole.Edge : GridMemberRole.V, alongU: false, i);
         }
 
-        if (options.Pattern == GridPattern.Quad) return members;
+        if (options.Pattern == GridPattern.Quad)
+        {
+            clipped = crossing;
+            return members;
+        }
 
         // Which nodes a diagrid stands on: the ones whose column and row add up
         // even, or under Flip the ones that add up odd.
@@ -461,7 +552,11 @@ public static class SurfaceGridGenerator
             else Add(b, d, GridMemberRole.Diagonal, alongU: false, -1);
         }
 
-        if (!diagrid) return members;
+        if (!diagrid)
+        {
+            clipped = crossing;
+            return members;
+        }
 
         // Closing the diagrid round the outside: along each edge, from one node
         // the diagrid stands on to the next, which is two divisions on. The
@@ -485,6 +580,7 @@ public static class SurfaceGridGenerator
                     Add(lattice.Index(i, j), lattice.Index(i, j + 2), GridMemberRole.Edge, alongU: false, i);
         }
 
+        clipped = crossing;
         return members;
     }
 }

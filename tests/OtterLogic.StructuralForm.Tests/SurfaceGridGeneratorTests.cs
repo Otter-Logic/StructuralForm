@@ -378,6 +378,75 @@ public class SurfaceGridGeneratorTests
     }
 
     [Fact]
+    public void A_trimmed_surface_is_clipped_to_its_outline_when_asked()
+    {
+        Brep plate = Brep.CreatePlanarBreps(new Circle(Plane.WorldXY, 5.0).ToNurbsCurve(), 0.001)[0];
+
+        SurfaceGrid whole = SurfaceGridGenerator.Generate(plate, Options(GridPattern.Quad, u: 10, v: 10));
+        SurfaceGrid clipped = SurfaceGridGenerator.Generate(
+            plate, Options(GridPattern.Quad, u: 10, v: 10) with { ClipToTrim = true });
+
+        Assert.True(clipped.IsClipped);
+        Assert.False(whole.IsClipped);
+        Assert.Equal(whole.Lattice.Nodes.Count, clipped.Lattice.Nodes.Count);       // positions are kept
+        Assert.True(clipped.ClippedNodes > 0);
+        Assert.Equal(clipped.ClippedNodes, clipped.Lattice.AbsentCount);
+
+        // Nothing left touches a node outside the circle, and the rows still read by position.
+        Assert.All(clipped.UsedNodes, n => Assert.True(n.DistanceTo(Point3d.Origin) <= 5.0 + 1e-6));
+        Assert.All(clipped.Members, m => Assert.True(m.Line.PointAt(0.5).DistanceTo(Point3d.Origin) <= 5.0 + 1e-6));
+        Assert.True(clipped.Members.Count < whole.Members.Count);
+        Assert.Contains(clipped.Notes, n => n.Level == FormNoteLevel.Remark && n.Message.Contains("Clipped"));
+        Assert.DoesNotContain(clipped.Notes, n => n.Level == FormNoteLevel.Warning);
+    }
+
+    [Fact]
+    public void An_opening_takes_out_the_nodes_in_it_and_the_members_across_it()
+    {
+        // A 12 by 8 plate with a 2 by 2 hole in the middle. At 1 m cells the
+        // node at (6, 4) is inside the hole and goes, with the four members
+        // that ran to it. At 4 m cells no node is inside it, but the member
+        // from (4, 4) to (8, 4) crosses it, and goes for that.
+        Brep plate = Brep.CreatePlanarBreps(
+            new[]
+            {
+                new Rectangle3d(Plane.WorldXY, new Interval(0, 12), new Interval(0, 8)).ToNurbsCurve(),
+                new Rectangle3d(Plane.WorldXY, new Interval(5, 7), new Interval(3, 5)).ToNurbsCurve(),
+            },
+            0.001)[0];
+
+        SurfaceGrid fine = SurfaceGridGenerator.Generate(
+            plate, Options(GridPattern.Quad, u: 12, v: 8) with { ClipToTrim = true });
+
+        Assert.Equal(1, fine.ClippedNodes);
+        Assert.False(fine.Lattice.IsPresent(6, 4));
+        Assert.DoesNotContain(fine.Members, m => m.StartNode == fine.Lattice.Index(6, 4) || m.EndNode == fine.Lattice.Index(6, 4));
+        Assert.Equal(13 * 8 + 12 * 9 - 4, fine.Members.Count);                  // four members ran to the lost node
+
+        SurfaceGrid coarse = SurfaceGridGenerator.Generate(
+            plate, Options(GridPattern.Triangulated, u: 3, v: 2) with { ClipToTrim = true });
+
+        Assert.Equal(0, coarse.ClippedNodes);
+        Assert.Equal(1, coarse.ClippedMembers);
+        Assert.All(coarse.Members, m =>
+        {
+            Point3d middle = m.Line.PointAt(0.5);
+            Assert.False(middle.X > 5 && middle.X < 7 && middle.Y > 3 && middle.Y < 5, $"{m.Role} crosses the hole.");
+        });
+        Assert.Contains(coarse.Notes, n => n.Message.Contains("crossing an opening"));
+    }
+
+    [Fact]
+    public void Normals_are_read_at_every_node()
+    {
+        SurfaceGrid grid = SurfaceGridGenerator.Generate(Tower(), Options(GridPattern.Quad, u: 8, v: 2));
+
+        Assert.Equal(grid.Lattice.Nodes.Count, grid.Normals.Count);
+        Assert.All(grid.Normals, n => Assert.Equal(1.0, n.Length, 9));
+        Assert.All(grid.Normals, n => Assert.Equal(0.0, n.Z, 9));
+    }
+
+    [Fact]
     public void A_polysurface_is_refused()
     {
         Brep box = new Box(Plane.WorldXY, new Interval(0, 1), new Interval(0, 1), new Interval(0, 1)).ToBrep();

@@ -113,6 +113,24 @@ public sealed record SurfaceGridOptions
     public SnapStrictness Strictness { get; init; } = SnapStrictness.Relaxed;
 
     /// <summary>
+    /// Clip the grid to a trimmed surface: a node that falls in an opening, or
+    /// outside the trimmed edge, is left out, and so is every member that ran
+    /// to it and any member whose middle crosses an opening.
+    /// <para>
+    /// Off by default, because that is what happened before there was a
+    /// choice: a trimmed surface is gridded whole, over the surface underneath
+    /// the trim, with a warning. On, the openings in a roof — a rooflight, a
+    /// stair, a plant well — come out as holes in the grid, and a surface
+    /// trimmed to an outline gives a grid that stops at the outline. Rows and
+    /// columns are unchanged and the positions are simply empty, so a tool
+    /// reading the grid by position still can. Members are left whole rather
+    /// than cut at the rim of an opening, because a member cut there would end
+    /// where there is no node; one that crosses an opening is left out.
+    /// </para>
+    /// </summary>
+    public bool ClipToTrim { get; init; }
+
+    /// <summary>
     /// Distance below which two nodes are the same node, and how near a snap
     /// point has to be to an edge to count as on it. Both front-ends set this
     /// from the document tolerance.

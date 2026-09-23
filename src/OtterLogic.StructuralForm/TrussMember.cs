@@ -4,7 +4,7 @@ using Rhino.Geometry;
 namespace OtterLogic.StructuralForm;
 
 /// <summary>
-/// What part of a truss a member belongs to, flat or box.
+/// What part of a truss a member belongs to: flat, box or space.
 /// <para>
 /// Deliberately finer-grained than the four structural families: verticals and
 /// diagonals are split apart because they are sized and specified separately,

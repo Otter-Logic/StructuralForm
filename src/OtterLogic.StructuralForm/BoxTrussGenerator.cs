@@ -117,11 +117,14 @@ public static class BoxTrussGenerator
             .Select((ruler, c) => stations[c].Select(ruler.PointAtStation).ToArray())
             .ToArray();
 
-        var web = new WebBuilder(sides.SnapTolerance);
+        // Chord c's nodes sit at c * count onwards in the truss's node list.
+        int[] Indices(int c) => Enumerable.Range(c * count, count).ToArray();
+
+        var web = new WebBuilder(nodes.SelectMany(chord => chord).ToArray(), sides.SnapTolerance);
 
         for (int c = 0; c < chords.Length; c++)
             web.AddChord(
-                nodes[c], c * count,
+                Indices(c),
                 c < tops.Length ? TrussMemberRole.TopChord : TrussMemberRole.BottomChord);
 
         bool suppressed = false;
@@ -135,7 +138,7 @@ public static class BoxTrussGenerator
             suppressed |= meetAtStart || meetAtEnd;
 
             web.AddFace(
-                nodes[a], a * count, nodes[b], b * count,
+                Indices(a), Indices(b),
                 type, flip, sides.GenerateEndPosts, meetAtStart, meetAtEnd, roles);
         }
 

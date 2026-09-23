@@ -106,11 +106,14 @@ public static class FlatTrussGenerator
 
         // Top chord nodes first, then bottom: the order FlatTruss.Nodes lists
         // them in, which is what the members' indices refer to.
-        var web = new WebBuilder(options.SnapTolerance);
-        web.AddChord(topNodes, 0, TrussMemberRole.TopChord);
-        web.AddChord(bottomNodes, count, TrussMemberRole.BottomChord);
+        int[] topIndices = Enumerable.Range(0, count).ToArray();
+        int[] bottomIndices = Enumerable.Range(count, count).ToArray();
+
+        var web = new WebBuilder(topNodes.Concat(bottomNodes).ToArray(), options.SnapTolerance);
+        web.AddChord(topIndices, TrussMemberRole.TopChord);
+        web.AddChord(bottomIndices, TrussMemberRole.BottomChord);
         web.AddFace(
-            topNodes, 0, bottomNodes, count,
+            topIndices, bottomIndices,
             options.Type, options.Flip, options.GenerateEndPosts, meetAtStart, meetAtEnd,
             new FaceRoles(TrussMemberRole.Vertical, TrussMemberRole.Diagonal, TrussMemberRole.EndPost));
 

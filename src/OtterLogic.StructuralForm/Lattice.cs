@@ -28,10 +28,10 @@ public readonly record struct LatticeCell(int I, int J, IReadOnlyList<int> Corne
 /// It knows nothing about where its nodes came from. A surface's own directions
 /// place them today; two directions across a floor plate will place them for a
 /// grillage, and everything above this class is meant to work unchanged. That
-/// is also what <see cref="IsPresent"/> is for. Nothing is ever absent from a
-/// whole surface, but a grid clipped to a floor's outline has positions that
-/// fall outside it, and code written against this from the start will not need
-/// revisiting when they arrive.
+/// is also what <see cref="IsPresent(int, int)"/> is for. Nothing is absent
+/// from a grid over a whole surface; a grid clipped to a trimmed surface has
+/// positions that fall in an opening or outside the trimmed edge, and those are
+/// simply not there — no node, and no member to or from one.
 /// </para>
 /// </summary>
 public sealed class Lattice
@@ -39,10 +39,15 @@ public sealed class Lattice
     private readonly Point3d[] _nodes;
     private readonly bool[] _present;
 
-    internal Lattice(Point3d[] nodes, int countU, int countV, bool wrapU, bool wrapV)
+    /// <param name="present">
+    /// Which positions have a node, or null for all of them. Absent positions
+    /// keep their place in <see cref="Nodes"/> — a row is still a row — so
+    /// nothing indexed by position has to be renumbered around a hole.
+    /// </param>
+    internal Lattice(Point3d[] nodes, int countU, int countV, bool wrapU, bool wrapV, bool[]? present = null)
     {
         _nodes = nodes;
-        _present = Enumerable.Repeat(true, nodes.Length).ToArray();
+        _present = present ?? Enumerable.Repeat(true, nodes.Length).ToArray();
 
         CountU = countU;
         CountV = countV;
@@ -98,6 +103,12 @@ public sealed class Lattice
 
     /// <summary>Whether there is a node at this position. Always, for a grid over a whole surface.</summary>
     public bool IsPresent(int i, int j) => _present[Index(i, j)];
+
+    /// <summary>As <see cref="IsPresent(int, int)"/>, by index into <see cref="Nodes"/>.</summary>
+    public bool IsPresent(int index) => _present[index];
+
+    /// <summary>How many positions have no node: zero unless the grid was clipped.</summary>
+    public int AbsentCount => _present.Count(p => !p);
 
     /// <summary>
     /// Node indices along grid line <paramref name="j"/> in the U direction, in
