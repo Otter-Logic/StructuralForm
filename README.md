@@ -18,6 +18,7 @@ out loud in `Notes` (a `FormNote`, shared by all of them).
 | [SurfaceGrid](#surfacegrid) | a quad, triangulated or diagrid layout over a surface, on a reusable `Lattice` |
 | [SpaceTruss](#spacetruss) | a double-layer space truss on a surface grid: pyramids, or flat trusses both ways |
 | [BeamInfill](#beaminfill) | secondary members in every panel a floor's primary beams enclose |
+| [GridColumns](#gridcolumns) | a column at every crossing of a set of gridlines, between two heights |
 
 ## FlatTruss
 
@@ -355,11 +356,56 @@ One beam drawn across it usually turns it into panels that can be filled.
 The picked beams are never split or moved. They are the user's model; `Nodes`
 is there so that splitting them is a decision taken knowingly.
 
+## GridColumns
+
+Takes the gridlines as the user drew them — lines, arcs, polylines, in any
+order and at any height — and stands a column at every place two of them
+cross, from `Base` to `Top`. The smallest tool here, and the one a building
+starts with: gridlines and two numbers are a floor of columns.
+
+**Crossing is a plan question, so the grid is flattened first.** Every curve
+is projected to world XY before any pair is crossed. A gridline traced at
+ground and one traced off a third-floor plan are the same grid, and reading
+them as not meeting because they sit at different heights would be wrong.
+`Plan` returns the flattened curves so a front-end can show the grid the
+columns were actually read from. A curve that flattens to nothing — a column
+already in the model, swept up in a window selection — is ignored and counted
+on `PlumbCurves`, since picking round columns is the tedious part of picking
+a grid.
+
+Crossings are merged within `Tolerance`, so three gridlines through one point
+are one column, and a gridline that ends on another is a crossing too. Two
+gridlines that run along each other rather than crossing — the same one
+picked twice, usually — get no column, and the pair is counted on
+`OverlappingPairs` and said in `Notes`, because the alternative is a column
+somewhere along the overlap that nobody chose. Crossings come out ordered by
+X then Y, not by pick order, so the same grid gives the same result however
+it was selected.
+
+`Base` and `Top` are world heights, not heights above anything. A column is
+the line from one to the other, so `Top` below `Base` is a column drawn
+downward — a pile from a pile cap — rather than a mistake. The two equal is
+not a mistake either: it places nothing, reports the crossings, and says so,
+which is the way to check the gridlines read as intended before deciding how
+tall the columns are.
+
+**Every crossing gets a column.** Which ones should not — the crossing in an
+atrium, the one on a transfer — is a decision the engineer takes on the picked
+curves or on the result. Nothing here guesses at it.
+
 ## Rules
 
 - Depends on [Core](https://github.com/Otter-Logic/Core) and nothing else. Never another domain, never an
   adaptor.
 - No UI. No Grasshopper. Adaptors wrap this; it does not know they exist.
+
+## Roadmap
+
+What comes next — columns at the crossings of picked curves, braced bays, a
+storey copied up with its columns the right length, curves split where they
+meet, ends snapped to a gridline — is set out tool by tool in
+[docs/roadmap.md](docs/roadmap.md), each checked against the native Rhino
+command that comes closest.
 
 ## Build and test
 
