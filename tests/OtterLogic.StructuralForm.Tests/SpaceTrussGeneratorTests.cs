@@ -21,8 +21,8 @@ public class SpaceTrussGeneratorTests
     private static SurfaceGrid Grid(GridPattern pattern = GridPattern.Quad, int u = 4, int v = 2, bool flip = false)
         => SurfaceGridGenerator.Generate(Flat(), new SurfaceGridOptions { Pattern = pattern, DivisionsU = u, DivisionsV = v, Flip = flip });
 
-    private static SpaceTruss Build(SurfaceGrid grid, SpaceTrussType type, TrussType web = TrussType.Warren, bool endPosts = true)
-        => SpaceTrussGenerator.Generate(grid, new SpaceTrussOptions { Depth = Depth, Type = type, Web = web, GenerateEndPosts = endPosts });
+    private static SpaceTruss Build(SurfaceGrid grid, SpaceTrussType type)
+        => SpaceTrussGenerator.Generate(grid, new SpaceTrussOptions { Depth = Depth, Type = type });
 
     private static void AssertIndicesResolve(SpaceTruss truss)
     {
@@ -38,13 +38,43 @@ public class SpaceTrussGeneratorTests
         Assert.Equal(keys.Count, keys.Distinct().Count());
     }
 
-    // ---- offset -------------------------------------------------------------
+    // ---- the one setting ----------------------------------------------------
 
     [Fact]
-    public void Offset_puts_a_pyramid_on_every_cell_and_a_quad_grid_between_the_apexes()
+    public void Every_flat_truss_pattern_is_a_space_truss_type_and_pyramid_is_the_only_other()
     {
-        SpaceTruss truss = Build(Grid(), SpaceTrussType.Offset);
+        // A pattern added to TrussType has to be added here by name, or the
+        // space truss silently cannot offer it.
+        foreach (TrussType pattern in Enum.GetValues<TrussType>())
+        {
+            var type = Enum.Parse<SpaceTrussType>(pattern.ToString());
+            Assert.Equal(pattern, type.Web());
+            Assert.False(type.IsPyramid());
+        }
 
+        Assert.True(SpaceTrussType.Pyramid.IsPyramid());
+        Assert.Null(SpaceTrussType.Pyramid.Web());
+        Assert.Equal(Enum.GetValues<TrussType>().Length + 1, Enum.GetValues<SpaceTrussType>().Length);
+    }
+
+    [Fact]
+    public void The_stored_values_still_mean_what_the_two_member_list_meant()
+    {
+        // 0 was the offset layers, 1 the aligned ones with their default
+        // Warren web: a saved definition reads the same either way.
+        Assert.Equal(SpaceTrussType.Pyramid, (SpaceTrussType)0);
+        Assert.Equal(SpaceTrussType.Warren, (SpaceTrussType)1);
+        Assert.Equal(SpaceTrussType.Pyramid, new SpaceTrussOptions().Type);
+    }
+
+    // ---- pyramids -------------------------------------------------------------
+
+    [Fact]
+    public void Pyramid_puts_a_pyramid_on_every_cell_and_a_quad_grid_between_the_apexes()
+    {
+        SpaceTruss truss = Build(Grid(), SpaceTrussType.Pyramid);
+
+        Assert.True(truss.IsPyramid);
         Assert.Equal(8, truss.BottomLattice.Nodes.Count);              // one apex per cell: 4 by 2
         Assert.Equal(4, truss.BottomLattice.CountU);
         Assert.Equal(2, truss.BottomLattice.CountV);
@@ -54,14 +84,15 @@ public class SpaceTrussGeneratorTests
         Assert.Equal(32, truss.Diagonals.Count());                     // four per pyramid
         Assert.Empty(truss.Verticals);
         Assert.Empty(truss.EndPosts);
+        Assert.Empty(truss.Notes);
 
         AssertIndicesResolve(truss);
     }
 
     [Fact]
-    public void Offset_apexes_sit_under_the_cell_centres_at_the_depth()
+    public void Pyramid_apexes_sit_under_the_cell_centres_at_the_depth()
     {
-        SpaceTruss truss = Build(Grid(), SpaceTrussType.Offset);
+        SpaceTruss truss = Build(Grid(), SpaceTrussType.Pyramid);
 
         Assert.Equal(new Point3d(1.5, 2.0, -Depth), truss.BottomLattice.Node(0, 0));
         Assert.Equal(new Point3d(10.5, 6.0, -Depth), truss.BottomLattice.Node(3, 1));
@@ -78,7 +109,7 @@ public class SpaceTrussGeneratorTests
         SurfaceGrid grid = SurfaceGridGenerator.Generate(upsideDown, new SurfaceGridOptions { DivisionsU = 4, DivisionsV = 2 });
         Assert.True(grid.Normals[0].Z < 0);
 
-        SpaceTruss truss = Build(grid, SpaceTrussType.Offset);
+        SpaceTruss truss = Build(grid, SpaceTrussType.Pyramid);
 
         Assert.All(truss.BottomNodes, n => Assert.Equal(-Depth, n.Z, 9));
     }
@@ -92,9 +123,9 @@ public class SpaceTrussGeneratorTests
     }
 
     [Fact]
-    public void Offset_under_a_diagrid_puts_an_apex_under_every_diamond_and_a_diagrid_between_them()
+    public void Pyramids_under_a_diagrid_sit_under_every_diamond_with_a_diagrid_between_them()
     {
-        SpaceTruss truss = Build(Grid(GridPattern.Diagrid, u: 6, v: 4), SpaceTrussType.Offset);
+        SpaceTruss truss = Build(Grid(GridPattern.Diagrid, u: 6, v: 4), SpaceTrussType.Pyramid);
 
         // 7 by 5 positions; the diagrid stands on the even ones. A diamond
         // centre is an odd interior position with a diagrid node each side of
@@ -115,13 +146,30 @@ public class SpaceTrussGeneratorTests
         AssertIndicesResolve(truss);
     }
 
-    // ---- aligned --------------------------------------------------------------
+    [Fact]
+    public void Pyramids_under_a_triangulated_grid_are_drawn_and_the_doubled_bracing_is_said()
+    {
+        SpaceTruss truss = Build(Grid(GridPattern.Triangulated), SpaceTrussType.Pyramid);
+
+        Assert.True(truss.DoublesTheTopBracing);
+        Assert.Equal(8, truss.ChordsOf(TrussMemberRole.TopChord, GridMemberRole.Diagonal).Count());
+        Assert.Equal(32, truss.Diagonals.Count());
+
+        FormNote note = Assert.Single(truss.Notes);
+        Assert.Equal(FormNoteLevel.Remark, note.Level);
+        Assert.Contains("braced twice", note.Message);
+
+        Assert.False(Build(Grid(GridPattern.Triangulated), SpaceTrussType.Warren).DoublesTheTopBracing);
+    }
+
+    // ---- two-way trusses ----------------------------------------------------
 
     [Fact]
-    public void Aligned_drops_the_grid_and_runs_a_flat_truss_along_every_line()
+    public void Warren_drops_the_grid_and_runs_a_flat_truss_along_every_line_with_posts_at_the_ends()
     {
-        SpaceTruss truss = Build(Grid(), SpaceTrussType.Aligned);
+        SpaceTruss truss = Build(Grid(), SpaceTrussType.Warren);
 
+        Assert.False(truss.IsPyramid);
         Assert.Equal(15, truss.BottomLattice.Nodes.Count);
         Assert.All(truss.BottomNodes, n => Assert.Equal(-Depth, n.Z, 9));
 
@@ -129,18 +177,18 @@ public class SpaceTrussGeneratorTests
         Assert.Equal(22, truss.BottomChord.Count());                   // the same pattern, dropped
         Assert.Equal(3 * 4 + 5 * 2, truss.Diagonals.Count());          // Warren: one per panel per line
         Assert.Empty(truss.Verticals);                                 // Warren has none
-        Assert.Equal(12, truss.EndPosts.Count());                      // every perimeter node
+        Assert.Equal(12, truss.EndPosts.Count());                      // every perimeter node, always
 
         AssertIndicesResolve(truss);
     }
 
     [Theory]
-    [InlineData(TrussType.WarrenWithVerticals, 3)]
-    [InlineData(TrussType.Pratt, 3)]
-    [InlineData(TrussType.Vierendeel, 3)]
-    public void Aligned_verticals_stand_at_the_interior_nodes_only(TrussType web, int verticals)
+    [InlineData(SpaceTrussType.WarrenWithVerticals, 3)]
+    [InlineData(SpaceTrussType.Pratt, 3)]
+    [InlineData(SpaceTrussType.Vierendeel, 3)]
+    public void Verticals_stand_at_the_interior_nodes_only(SpaceTrussType type, int verticals)
     {
-        SpaceTruss truss = Build(Grid(), SpaceTrussType.Aligned, web);
+        SpaceTruss truss = Build(Grid(), type);
 
         Assert.Equal(verticals, truss.Verticals.Count());
         Assert.Equal(12, truss.EndPosts.Count());
@@ -148,18 +196,41 @@ public class SpaceTrussGeneratorTests
     }
 
     [Fact]
-    public void Aligned_without_end_posts_leaves_the_perimeter_open()
+    public void Each_two_way_type_is_the_flat_truss_of_that_name_along_every_line()
     {
-        SpaceTruss truss = Build(Grid(), SpaceTrussType.Aligned, TrussType.Pratt, endPosts: false);
+        // Along the middle row of a 4 by 2 grid, the diagonals of the space
+        // truss are exactly what a flat truss of the same pattern draws
+        // between the same two chords: Pratt here means what Pratt means there.
+        SurfaceGrid grid = Grid();
+        var top = new LineCurve(new Point3d(0, 4, 0), new Point3d(12, 4, 0));
+        var bottom = new LineCurve(new Point3d(0, 4, -Depth), new Point3d(12, 4, -Depth));
 
-        Assert.Empty(truss.EndPosts);
-        Assert.Equal(3, truss.Verticals.Count());                      // still only the interior ones
+        foreach (SpaceTrussType type in Enum.GetValues<SpaceTrussType>())
+        {
+            if (type.IsPyramid()) continue;
+
+            FlatTruss flat = FlatTrussGenerator.Generate(top, bottom, new FlatTrussOptions { Type = type.Web()!.Value, Divisions = 4 });
+            SpaceTruss space = Build(grid, type);
+
+            var expected = flat.Diagonals.Select(Key).OrderBy(k => k).ToList();
+            var actual = space.Diagonals.Where(d => Math.Abs(d.From.Y - 4) < 1e-6 && Math.Abs(d.To.Y - 4) < 1e-6)
+                .Select(Key).OrderBy(k => k).ToList();
+
+            Assert.Equal(expected, actual);
+        }
+
+        static string Key(Line line)
+        {
+            Point3d a = line.From, b = line.To;
+            if (a.X > b.X || (a.X == b.X && a.Z > b.Z)) (a, b) = (b, a);
+            return $"{a.X:0.###},{a.Z:0.###}-{b.X:0.###},{b.Z:0.###}";
+        }
     }
 
     [Fact]
-    public void Aligned_under_a_diagrid_runs_trusses_along_the_diagonal_lines()
+    public void Two_way_trusses_under_a_diagrid_run_along_the_diagonal_lines()
     {
-        SpaceTruss truss = Build(Grid(GridPattern.Diagrid), SpaceTrussType.Aligned);
+        SpaceTruss truss = Build(Grid(GridPattern.Diagrid), SpaceTrussType.Warren);
 
         // Eight cells, one diagrid diagonal each, top and bottom.
         Assert.Equal(8, truss.ChordsOf(TrussMemberRole.TopChord, GridMemberRole.Diagonal).Count());
@@ -181,12 +252,13 @@ public class SpaceTrussGeneratorTests
     {
         SurfaceGrid grid = SurfaceGridGenerator.Generate(Tower(), new SurfaceGridOptions { DivisionsU = 8, DivisionsV = 4 });
 
-        SpaceTruss truss = Build(grid, SpaceTrussType.Aligned, TrussType.WarrenWithVerticals);
+        SpaceTruss truss = Build(grid, SpaceTrussType.WarrenWithVerticals);
 
         Assert.True(truss.FacesSideways);
         Assert.Contains(truss.Notes, n => n.Message.Contains("stands on end"));
 
-        // Every bottom node is a constant radius from the axis: the normal is horizontal.
+        // Every bottom node is a constant radius from the axis: the depth is
+        // along the normal, which is horizontal here.
         Assert.All(truss.BottomNodes, n => Assert.Equal(5.0 + Depth, Math.Sqrt(n.X * n.X + n.Y * n.Y), 6));
 
         // Rings are closed runs: a vertical at every node, no end posts round them.
@@ -197,14 +269,13 @@ public class SpaceTrussGeneratorTests
     }
 
     [Fact]
-    public void Vertical_depth_on_a_tower_is_refused_out_loud()
+    public void Flip_depth_on_a_tower_puts_the_second_layer_inside()
     {
         SurfaceGrid grid = SurfaceGridGenerator.Generate(Tower(), new SurfaceGridOptions { DivisionsU = 8, DivisionsV = 4 });
 
-        SpaceTruss truss = SpaceTrussGenerator.Generate(
-            grid, new SpaceTrussOptions { Depth = Depth, DepthAlong = DepthDirection.Vertical });
+        SpaceTruss truss = SpaceTrussGenerator.Generate(grid, new SpaceTrussOptions { Depth = Depth, FlipDepth = true });
 
-        Assert.Contains(truss.Notes, n => n.Level == FormNoteLevel.Warning && n.Message.Contains("vertically"));
+        Assert.All(truss.BottomNodes, n => Assert.Equal(5.0 - Depth, Math.Sqrt(n.X * n.X + n.Y * n.Y), 6));
     }
 
     [Fact]
@@ -215,9 +286,9 @@ public class SpaceTrussGeneratorTests
 
         SurfaceGrid grid = SurfaceGridGenerator.Generate(fan, new SurfaceGridOptions { DivisionsU = 4, DivisionsV = 2 });
 
-        foreach (SpaceTrussType type in new[] { SpaceTrussType.Offset, SpaceTrussType.Aligned })
+        foreach (SpaceTrussType type in new[] { SpaceTrussType.Pyramid, SpaceTrussType.Pratt })
         {
-            SpaceTruss truss = Build(grid, type, TrussType.Pratt);
+            SpaceTruss truss = Build(grid, type);
 
             AssertIndicesResolve(truss);
 
@@ -261,7 +332,7 @@ public class SpaceTrussGeneratorTests
         Assert.Equal(0, grid.ClippedNodes);
         Assert.Equal(0, grid.ClippedMembers);
 
-        SpaceTruss truss = Build(grid, SpaceTrussType.Offset);
+        SpaceTruss truss = Build(grid, SpaceTrussType.Pyramid);
 
         Assert.False(truss.BottomLattice.IsPresent(1, 0));
         Assert.Equal(6 - 1, truss.BottomLattice.Nodes.Count - truss.BottomLattice.AbsentCount);
@@ -273,7 +344,7 @@ public class SpaceTrussGeneratorTests
     }
 
     [Fact]
-    public void An_aligned_truss_stops_at_the_rim_of_an_opening_with_posts_there()
+    public void A_two_way_truss_stops_at_the_rim_of_an_opening_with_posts_there()
     {
         // 12 by 8: 1 m cells, so the hole swallows the node at (6, 4) and its
         // members, and the four lines through it are each cut in two.
@@ -282,7 +353,7 @@ public class SpaceTrussGeneratorTests
 
         Assert.Equal(1, grid.ClippedNodes);
 
-        SpaceTruss truss = Build(grid, SpaceTrussType.Aligned, TrussType.Pratt);
+        SpaceTruss truss = Build(grid, SpaceTrussType.Pratt);
 
         Assert.False(truss.BottomLattice.IsPresent(6, 4));
         Assert.DoesNotContain(truss.Members, m => m.Line.From.DistanceTo(new Point3d(6, 4, 0)) < 1e-6
@@ -309,17 +380,8 @@ public class SpaceTrussGeneratorTests
         Assert.Throws<ArgumentException>(
             () => SpaceTrussGenerator.Generate(grid, new SpaceTrussOptions { Depth = -1 }));
         Assert.Throws<ArgumentException>(
-            () => SpaceTrussGenerator.Generate(grid, new SpaceTrussOptions { Depth = 1, Type = (SpaceTrussType)7 }));
+            () => SpaceTrussGenerator.Generate(grid, new SpaceTrussOptions { Depth = 1, Type = (SpaceTrussType)99 }));
         Assert.Throws<ArgumentNullException>(
             () => SpaceTrussGenerator.Generate(null!, new SpaceTrussOptions { Depth = 1 }));
-    }
-
-    [Fact]
-    public void An_offset_truss_says_when_a_web_pattern_was_asked_for_and_ignored()
-    {
-        SpaceTruss truss = SpaceTrussGenerator.Generate(
-            Grid(), new SpaceTrussOptions { Depth = Depth, Type = SpaceTrussType.Offset, Web = TrussType.Pratt });
-
-        Assert.Contains(truss.Notes, n => n.Message.Contains("aligned truss"));
     }
 }

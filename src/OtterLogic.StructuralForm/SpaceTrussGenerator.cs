@@ -11,27 +11,34 @@ namespace OtterLogic.StructuralForm;
 /// <para>
 /// The grid is the top layer, exactly as it was made: its nodes, its members,
 /// its openings if it was clipped. The truss adds a second layer under it and
-/// a web between the two, and where the second layer's nodes go is the one
-/// decision <see cref="SpaceTrussType"/> makes:
+/// a web between the two, and what that web is, which also says where the
+/// second layer's nodes go, is the one decision <see cref="SpaceTrussType"/>
+/// makes:
 /// </para>
 /// <list type="bullet">
 /// <item><description>
-/// <see cref="SpaceTrussType.Offset"/> puts a node under the centre of every
+/// <see cref="SpaceTrussType.Pyramid"/> puts a node under the centre of every
 /// cell and joins it to the cell's corners — a pyramid per cell, the second
 /// layer a grid of the apexes. Under a diagrid, a node under the centre of
 /// every diamond, joined to its four corners, and a second diagrid between the
 /// apexes. Everything is index arithmetic over the lattice.
 /// </description></item>
 /// <item><description>
-/// <see cref="SpaceTrussType.Aligned"/> puts a node under every node and draws
-/// the grid's own pattern between them, then runs a flat truss along every
+/// Every other type puts a node under every node and draws the grid's own
+/// pattern between them, then runs a flat truss of that pattern along every
 /// grid line — rows and columns of a quad or triangulated grid, the diagonal
 /// runs of a diagrid — through the same <see cref="WebBuilder"/> a flat truss
-/// uses, so <see cref="SpaceTrussOptions.Web"/> means what
-/// <see cref="FlatTrussOptions.Type"/> means. An opening splits a line into
-/// runs, and each run is a truss of its own, with its own end posts.
+/// uses, so Warren here means what <see cref="TrussType.Warren"/> means. An
+/// opening splits a line into runs, and each run is a truss of its own, with
+/// a post at each end.
 /// </description></item>
 /// </list>
+/// <para>
+/// The depth is measured along the surface normal, and which side it goes is
+/// decided once for the whole surface rather than node by node: a dome's
+/// normals turn from up at the crown to level at the springing, and a rule
+/// read per node would flip the layer inside out part way down.
+/// </para>
 /// <para>
 /// A pole in the grid is one node however many positions sit on it, and the
 /// second layer is welded the same way, through the grid's own map of them.
@@ -60,10 +67,6 @@ public static class SpaceTrussGenerator
         double tolerance = grid.Options.Tolerance;
         int topCount = top.Nodes.Count;
 
-        // Which side the second layer goes, decided once for the whole surface
-        // rather than node by node: a dome's normals turn from up at the crown
-        // to level at the springing, and a rule read per node would flip the
-        // layer inside out part way down.
         Vector3d mean = Vector3d.Zero;
         int counted = 0;
 
@@ -79,9 +82,7 @@ public static class SpaceTrussGenerator
         bool sideways = Math.Abs(mean.Z) <= Level;
         double sign = (mean.Z > Level ? -1.0 : 1.0) * (options.FlipDepth ? -1.0 : 1.0);
 
-        Vector3d Direction(Vector3d normal) => options.DepthAlong == DepthDirection.Vertical
-            ? new Vector3d(0.0, 0.0, options.FlipDepth ? 1.0 : -1.0)
-            : normal * sign;
+        Vector3d Direction(Vector3d normal) => normal * sign;
 
         Func<Line, bool>? excluded = grid.Trim is null ? null : grid.Trim.Excludes;
 
@@ -95,25 +96,20 @@ public static class SpaceTrussGenerator
         int crossing;
         bool noLines = false;
 
-        switch (options.Type)
-        {
-            case SpaceTrussType.Aligned:
-                bottom = Aligned(grid, options, Direction, excluded, members, out crossing, out noLines);
-                break;
+        if (!options.Type.IsPyramid())
+            bottom = Aligned(grid, options, Direction, excluded, members, out crossing, out noLines);
+        else if (grid.Options.Pattern == GridPattern.Diagrid)
+            bottom = PyramidsUnderDiagrid(grid, options, Direction, excluded, members, out crossing);
+        else
+            bottom = PyramidsUnderCells(grid, options, Direction, excluded, members, out crossing);
 
-            case SpaceTrussType.Offset when grid.Options.Pattern == GridPattern.Diagrid:
-                bottom = OffsetUnderDiagrid(grid, options, Direction, excluded, members, out crossing);
-                break;
+        // Legal, and worth a word: a triangulated top layer already braces
+        // every cell in its own plane, and a pyramid braces the same cell
+        // again from below, with the top diagonal passing straight over the
+        // apex with no node between them.
+        bool doubled = options.Type.IsPyramid() && grid.Options.Pattern == GridPattern.Triangulated;
 
-            case SpaceTrussType.Offset:
-                bottom = OffsetUnderCells(grid, options, Direction, excluded, members, out crossing);
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(options), options.Type, "Unhandled space truss type.");
-        }
-
-        return new SpaceTruss(grid, bottom, members, options, sideways, crossing, noLines);
+        return new SpaceTruss(grid, bottom, members, options, sideways, crossing, noLines, doubled);
     }
 
     private static void Validate(SpaceTrussOptions options)
@@ -124,16 +120,6 @@ public static class SpaceTrussGenerator
             throw new ArgumentException(
                 $"Space truss type {(int)options.Type} does not exist. Valid values are "
                 + $"0-{Enum.GetValues<SpaceTrussType>().Length - 1}.",
-                nameof(options));
-        if (!Enum.IsDefined(options.Web))
-            throw new ArgumentException(
-                $"Truss type {(int)options.Web} does not exist. Valid values are "
-                + $"0-{Enum.GetValues<TrussType>().Length - 1}.",
-                nameof(options));
-        if (!Enum.IsDefined(options.DepthAlong))
-            throw new ArgumentException(
-                $"Depth direction {(int)options.DepthAlong} does not exist. Valid values are "
-                + $"0-{Enum.GetValues<DepthDirection>().Length - 1}.",
                 nameof(options));
     }
 
@@ -188,24 +174,19 @@ public static class SpaceTrussGenerator
             ends.Add(nodes[^1]);
         }
 
-        if (options.GenerateEndPosts)
-            foreach (int end in ends)
-                web.Add(end, topCount + end, TrussMemberRole.EndPost);
+        foreach (int end in ends)
+            web.Add(end, topCount + end, TrussMemberRole.EndPost);
+
+        TrussType pattern = options.Type.Web()
+            ?? throw new ArgumentOutOfRangeException(nameof(options), options.Type, "A pyramid truss has no line to run a web along.");
 
         foreach ((int[] nodes, bool closed) in runs)
             web.AddFace(
                 nodes, nodes.Select(k => topCount + k).ToArray(),
-                options.Web, options.FlipWeb, endPosts: false, meetAtStart: false, meetAtEnd: false,
+                pattern, flip: false, endPosts: false, meetAtStart: false, meetAtEnd: false,
                 WebRoles, closed);
 
-        List<TrussMember> built = web.Members;
-
-        // Without posts the ends are open, and a line running through an end
-        // node of another line does not get to close it either.
-        if (!options.GenerateEndPosts)
-            built.RemoveAll(m => m.Role == TrussMemberRole.Vertical && ends.Contains(m.StartNode));
-
-        foreach (TrussMember m in built)
+        foreach (TrussMember m in web.Members)
             members.Add(new SpaceTrussMember(m.Line, m.Role, null, m.StartNode, m.EndNode));
 
         crossing += web.Excluded;
@@ -323,7 +304,7 @@ public static class SpaceTrussGenerator
     /// a point is neither.
     /// </para>
     /// </summary>
-    private static Lattice OffsetUnderCells(
+    private static Lattice PyramidsUnderCells(
         SurfaceGrid grid,
         SpaceTrussOptions options,
         Func<Vector3d, Vector3d> direction,
@@ -408,7 +389,7 @@ public static class SpaceTrussGenerator
     /// diagrid nodes round it. The apexes are then a diagrid of the other
     /// parity, and the second layer's chords run between them.
     /// </summary>
-    private static Lattice OffsetUnderDiagrid(
+    private static Lattice PyramidsUnderDiagrid(
         SurfaceGrid grid,
         SpaceTrussOptions options,
         Func<Vector3d, Vector3d> direction,

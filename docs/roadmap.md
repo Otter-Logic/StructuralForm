@@ -33,6 +33,43 @@ later: picking points instead of curves for the column on no crossing, and a
 point-to-line extrude in Rhino, so it is then `Line` > `Vertical` once per
 column. This is the gap, and the reason the tool exists.
 
+### Grids — `OtterGrid`, `OtterRadialGrid` *(built)*
+
+Pick an origin; type the bays each way as `6000` or `3x6000, 8000`. The
+gridlines and a node at every crossing are previewed in the construction
+plane, with the overhang and an angle to adjust, and baked to `OtterGrid1`.
+The radial one takes a centre, the hole in the middle as two half-axes — both
+zero for rays to the centre, equal for a round hole, different for the oval a
+stadium sits round — the ring spacings, a sweep in degrees (90 for a quarter)
+and a bay count; a full sweep closes its rings and does not draw the last ray
+on the first. See *RectangularGrid* and *RadialGrid* in the README. Still not built, by the rule at the top: labels. A gridline is a line
+the office names its own way, and a grid object that carried A, B, C would
+have to be kept in step with every drawing that showed them.
+
+*Native check.* Rhino has no grid object; `Grid` only toggles the CPlane
+grid's display. A rectangular grid by hand is a `Line` per gridline, or
+`Array` when every bay is the same, then `Intersect` for the nodes; a radial
+one is `Line`, `ArrayPolar` and an `Arc` or `Circle` per ring, and
+`ArrayPolar` cannot stop at a quarter without a count that happens to divide.
+Grasshopper's own *Rectangular* and *Radial* grids (Vector > Grid) repeat one
+spacing, always close the circle, and give cells rather than gridlines, so a
+grid of unequal bays or a quarter grid is not one component there either.
+
+### Beams — `OtterBeam` *(built)*
+
+Pick the columns, pick the gridlines, type a level or pick a surface. Along
+every gridline, a beam between each pair of neighbouring columns standing on
+it, at the level or following the surface, and a node where each meets a
+column. A crossing with no column gets no beam through it; nothing runs past
+the last column. See *GridBeams* in the README. With this, Columns and Beam
+Infill, a floor is drawn from its gridlines and two numbers.
+
+*Native check.* `Split` a gridline at the column points, then `Move` the
+pieces up, then delete the ends past the last column: three commands per
+gridline, and the column points have to be found first. Grasshopper has
+Shatter, which wants the parameters, and nothing that reads which columns are
+on which line.
+
 ### Braced Bay — `OtterBracing`
 
 Pick the two columns of a bay — or the four lines round it, or a closed
@@ -167,7 +204,7 @@ Recorded so it is not proposed again.
 | Floor panels from a set of beams | `CurveBoolean` with `AllRegions`, then `PlanarSrf` |
 | Openings in a wall or slab | `Trim`, or `MakeHole` |
 | Divide a curved beam into straight segments | `Divide` with `Split=Yes`, then `Polyline` through the points, or `Convert` |
-| Beams between grid intersections | `OtterSplitAtIntersections` on the gridlines, above |
+| Beams between every grid intersection, columns or not | `OtterSplitAtIntersections` on the gridlines, above; `OtterBeam` where the beams should follow the columns |
 | Extend beams to a gridline, or trim them back | `ExtendCrv` with the gridline as boundary, `Trim` |
 | Portal frames at bay spacing | draw one frame; `ArrayLinear` |
 | Levels as planes | `CPlane` > `Elevation`, or a `Plane` on a locked layer |
@@ -176,9 +213,9 @@ Recorded so it is not proposed again.
 
 ## Order
 
-1. **Columns**, **Split at Intersections**, **Copy Storey** — with these three
-   and the existing Beam Infill, a framed building is drawn from a few
-   gridlines and a few numbers.
+1. **Columns**, **Grids**, **Beams**, **Split at Intersections**, **Copy
+   Storey** — with these and the existing Beam Infill, a framed building is
+   drawn from a few numbers.
 2. **Braced Bay**, **Snap Ends**.
 3. **Orient to Gridline**, **Rotate About Curve**, **Centreline**.
 4. Grillage, Tributary Polygons, Slab Mesh.

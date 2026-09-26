@@ -46,24 +46,7 @@ public static class GridColumnsGenerator
         if (!double.IsFinite(options.Base) || !double.IsFinite(options.Top))
             throw new ArgumentException("Base and Top have to be finite heights.", nameof(options));
 
-        var plan = new List<Curve>();
-        int plumb = 0;
-
-        foreach (Curve? gridline in gridlines)
-        {
-            if (gridline is null || !gridline.IsValid)
-                throw new ArgumentException("Every gridline must be a valid curve.", nameof(gridlines));
-
-            // A curve too short to be a gridline cannot cross anything either.
-            if (gridline.GetLength() <= options.Tolerance) continue;
-
-            Curve? shadow = Curve.ProjectToPlane(gridline, Plane.WorldXY);
-
-            if (shadow is null || shadow.GetLength() <= options.Tolerance)
-                plumb++;
-            else
-                plan.Add(shadow);
-        }
+        List<Curve> plan = PlanView.Flatten(gridlines, options.Tolerance, out int plumb);
 
         var crossings = new List<Point3d>();
         int overlapping = 0;
@@ -90,7 +73,10 @@ public static class GridColumnsGenerator
                     // either will do, and A is taken for determinism.
                     Point3d point = hit.PointA;
                     point.Z = 0.0;
-                    Merge(crossings, point, options.Tolerance);
+
+                    // Three gridlines through a point are three pairs, so the
+                    // point arrives three times; merged, it is one crossing.
+                    PlanView.Merge(crossings, point, options.Tolerance);
                 }
 
                 if (overlapped) overlapping++;
@@ -112,23 +98,5 @@ public static class GridColumnsGenerator
         }
 
         return new GridColumns(columns, crossings, plan, options, plumb, overlapping);
-    }
-
-    /// <summary>
-    /// Keep one crossing where several gridlines pass through the same point.
-    /// <para>
-    /// Three gridlines through a point are three pairs, so the point arrives
-    /// three times; a T-junction where a gridline ends on another arrives once
-    /// from that pair and again from the pair either side of it. The count of
-    /// crossings is small enough that a linear scan is fine.
-    /// </para>
-    /// </summary>
-    private static void Merge(List<Point3d> crossings, Point3d point, double tolerance)
-    {
-        foreach (Point3d kept in crossings)
-            if (kept.DistanceTo(point) <= tolerance)
-                return;
-
-        crossings.Add(point);
     }
 }

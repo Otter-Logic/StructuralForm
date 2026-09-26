@@ -7,9 +7,10 @@ Trusses and structural layouts for [OtterLogic](https://github.com/Otter-Logic/R
 A **domain**: it owns its types *and* its logic. `TrussType`, `FlatTrussOptions`,
 `FlatTruss` and `FlatTrussGenerator` live together because they change together.
 
-Five tools so far, built the same way: the user draws the geometry that governs,
-the tool does the setting-out, and anything that quietly did not work is said
-out loud in `Notes` (a `FormNote`, shared by all of them).
+Nine tools so far, built the same way: the user draws the geometry that
+governs, or types the numbers that do, the tool does the setting-out, and
+anything that quietly did not work is said out loud in `Notes` (a `FormNote`,
+shared by every tool that has something it could fail to say).
 
 | | |
 |---|---|
@@ -19,6 +20,9 @@ out loud in `Notes` (a `FormNote`, shared by all of them).
 | [SpaceTruss](#spacetruss) | a double-layer space truss on a surface grid: pyramids, or flat trusses both ways |
 | [BeamInfill](#beaminfill) | secondary members in every panel a floor's primary beams enclose |
 | [GridColumns](#gridcolumns) | a column at every crossing of a set of gridlines, between two heights |
+| [GridBeams](#gridbeams) | a beam along every gridline between each pair of neighbouring columns on it, at a level or on a surface |
+| [RectangularGrid](#rectangulargrid) | gridlines both ways from typed bay spacings, with a node at every crossing |
+| [RadialGrid](#radialgrid) | rays and rings about a centre or an oval hole, over any sweep, with a node wherever they meet |
 
 ## FlatTruss
 
@@ -266,28 +270,53 @@ Made from the grid rather than from the surface again so that the truss and
 the grid cannot disagree about where a node is, and so that the openings
 clipped out of the grid are clipped out of the truss.
 
-`Type` is the one decision, and it says where the second layer's nodes go:
+**Three settings: `Depth`, `Type` and `FlipDepth`.** There were seven. The
+web pattern, its flip and its end posts have folded into `Type`, and the
+vertical depth has gone; the reasons are below, because each was a control
+somebody could reach for that did nothing under the combination they had.
+
+`Type` is the one decision: what runs between the layers, which also says
+where the second layer's nodes go.
 
 | | |
 |---|---|
-| `Offset` *(default)* | a node under the **centre of every cell**, joined to the cell's four corners: a pyramid per cell, and the apexes as a quad grid of their own. The space frame in its usual form, with no verticals and no pattern to choose, since the pyramids are the whole web. Under a diagrid the same rule puts a node under the centre of every diamond and the second layer comes out a diagrid of the other parity |
-| `Aligned` | a node under **every node**, the grid's own pattern between them, and a flat truss along every grid line — rows and columns of a quad or triangulated grid, the diagonal runs of a diagrid — through the same `WebBuilder` a flat truss uses. `Web`, `FlipWeb` and `GenerateEndPosts` mean what `FlatTrussOptions` says they mean, with posts wherever a line ends: round the outside, and at the rim of an opening, which splits a line into runs that are each a truss of their own. A line round a tower is one closed run, with a vertical at every node and no ends |
+| `Pyramid` *(default)* | the second layer offset half a cell: a node under the **centre of every cell**, joined to the cell's four corners, so every cell carries a pyramid and the apexes are a quad grid of their own. The space frame in its usual form, square on square offset, with no verticals and no pattern to choose, since the pyramids are the whole web. Under a diagrid the same rule puts a node under the centre of every diamond and the second layer comes out a diagrid of the other parity |
+| `Warren`, `WarrenWithVerticals`, `Pratt`, `Howe`, `Vierendeel`, `CrossBraced` | the second layer aligned: a node under **every node**, the grid's own pattern between them, and a flat truss of that name along every grid line — rows and columns of a quad or triangulated grid, the diagonal runs of a diagrid — through the same `WebBuilder` a flat truss uses, so each is exactly the `TrussType` of the same name (a test holds the two to it, line by line). Two-way trusses on a grid rather than a space frame. A post closes every line wherever it ends: round the outside, and at the rim of an opening, which splits a line into runs that are each a truss of their own. A line round a tower is one closed run, with a vertical at every node and no ends |
+
+Why one list rather than a layer type and a web pattern: the pattern was dead
+whenever the layers were offset, and a remark had to say so. Why no flip: with
+`Pratt` and `Howe` both in the list, a flip was Howe by another name, and on
+Warren it only chose which way the first zigzag leaned. Why posts always: a
+two-way truss with no post at its supported edge is the case nobody asks for,
+and the post is one member to delete where it is not wanted.
+
+**Type against pattern.** Every combination is drawn as asked. Pyramids on a
+quad grid and on a diagrid are the two classic space frames. A flat-truss type
+on any pattern is two-way trusses, along the diagonals for a diagrid, which
+only fails where a diagrid closes on itself both ways and its lines have no
+ends to start from; that is said as a warning. The one combination worth a
+remark is pyramids under a **triangulated** grid: every cell is then braced
+twice, by its diagonal in the top layer and by the pyramid below, with the
+diagonal passing over the apex with no node between them. It is drawn,
+`DoublesTheTopBracing` is set, and the note says a quad grid is the usual top
+layer for pyramids.
 
 A pole is one node however many positions sit on it, and the second layer is
 welded the same way; a pyramid against a pole is three members, not four with
 two on top of each other.
 
-`DepthAlong` is which way the second layer is offset. `SurfaceNormal`
-*(default)* keeps the truss the same depth everywhere and follows the surface —
-a dome's second layer is a smaller dome. The side is decided **once for the
-whole surface**, from the mean of its normals: down where the surface faces up
-on the whole, whichever way it happened to be built, because a rule read node
-by node would turn a dome's layer inside out part way down where its normals
-go level. A surface that stands on end has no underside, so its layer goes on
-the side it faces and a note says so; `FlipDepth` puts it on the other, and
-serves for the roof that wanted its truss above. `Vertical` drops the layer
-straight down instead, so every web member is plumb — and warns on a surface
-standing on end, where that puts the second layer in the surface's own plane.
+`Depth` is measured along the surface normal at every node, so the truss is
+the same depth everywhere and follows the surface — a dome's second layer is a
+smaller dome. The side is decided **once for the whole surface**, from the
+mean of its normals: down where the surface faces up on the whole, whichever
+way it happened to be built, because a rule read node by node would turn a
+dome's layer inside out part way down where its normals go level. A surface
+that stands on end has no underside, so its layer goes on the side it faces
+and a note says so; `FlipDepth` puts it on the other, and serves for the roof
+that wanted its truss above. A depth measured vertically was offered once and
+is not any more: on a curved roof it thins the truss toward the sides, on a
+tower it puts the second layer in the surface's own plane, and a space truss
+is a constant depth or it is something else.
 
 Every member is a `SpaceTrussMember` with a `TrussMemberRole` — the flat
 truss's five — and, for a chord, a `GridRole` saying which part of its layer's
@@ -392,6 +421,124 @@ tall the columns are.
 **Every crossing gets a column.** Which ones should not — the crossing in an
 atrium, the one on a transfer — is a decision the engineer takes on the picked
 curves or on the result. Nothing here guesses at it.
+
+## GridBeams
+
+The partner of GridColumns. Takes the columns and the gridlines, and runs a
+beam along every gridline between each pair of neighbouring columns standing
+on it, at a `Level` or projected onto a `Surface`. GridColumns reads the
+crossings; this reads the **columns**, and that is the point: a crossing in an
+atrium has no column and gets no beam through it, and a column deleted after
+the grid was made takes its beams with it. Together, gridlines and a few
+numbers are a floor of columns and its primary beams; Beam Infill then fills
+the panels between them.
+
+Three steps. **Every column becomes a point in plan**: where it crosses the
+level, so a leaning column is read where the beam actually meets it, or the
+nearer end when it stops short, which is counted on `ColumnsShortOfLevel` and
+said. Columns stacked storey on storey, picked together, are one point, and
+the point reaches if any of them does. A curve that runs further in plan than
+it rises is a beam or a brace swept up in the pick, counted on `NotColumns`
+and left out. **Every gridline is flattened** through the same `PlanView` that
+GridColumns uses, and the columns on it are found within `Reach` and sorted
+along it. **The piece of gridline between each consecutive pair is a beam**:
+straight where the gridline is straight, an arc where it is an arc, lifted to
+the level or projected onto the surface straight up or down. A gridline's end
+past its last column gets nothing: a cantilever is a decision, not a default.
+
+`Reach` is how far a column may sit off a gridline and still count as on it.
+Zero uses the tolerance, which is right for columns the grid tools placed; a
+model drawn by hand has its columns a few millimetres off, and this is the
+knob for that. It is chosen rather than read from the model, because a column
+found by reaching further gets a beam drawn to the gridline, not to the
+column. What went unmatched is counted both ways: `ColumnsOffGrid` for a
+column on no line, `GridlinesWithOneColumn` for a line with nothing to span.
+
+`ByGridline` groups the beams by the gridline they lie along, in `Plan` order
+with an empty list for a line that got none, so a definition can size a
+gridline's beams together. `Nodes` are where beams meet columns, merged and
+ordered by X then Y, on the level or on the surface.
+
+## RectangularGrid
+
+Takes a plane and the bay spacings each way, and sets out the gridlines and a
+node at every crossing. The tool a model starts with, before there is anything
+to pick: gridlines are what Grid Columns reads and what beams are split on,
+and drawing them by hand is a `Line` per gridline because Rhino's array can
+only repeat one spacing.
+
+`XSpacings` are the bays measured along the plane's X axis, so each places a
+gridline that runs the full depth of the grid in Y; `YSpacings` the other way.
+Unequal bays are just a list — `6, 6, 8` — and one more gridline than bays
+each way. `Overhang` runs every gridline past the outer ones at both ends, for
+the bubbles; it moves no node. The plane is the whole of where and which way:
+a skewed grid is a rotated plane, so there is no angle of its own.
+
+`Rows[i][j]` is where the `i`-th X gridline meets the `j`-th Y gridline, and
+`Nodes` is the same flattened by X then Y — the order Grid Columns sorts its
+crossings into, so feeding the gridlines to it gives the same nodes in the same
+order (a test holds the two to that). `XOffsets` and `YOffsets` are the running
+totals, for anything that labels or sets out from them.
+
+No `Notes`: the inputs are numbers, every one is checked up front, and a grid
+that passes is drawn in full. No labels either, by the rule in
+[docs/roadmap.md](docs/roadmap.md): a gridline is a line the office names its
+own way.
+
+`Spacings` reads the typed form — `6000`, `3x6000, 8000`, `*` for `x` — and
+writes it back collapsed, so a Rhino prompt can show the remembered list the
+way it was typed. Numbers are read in the invariant culture; a comma is always
+a separator.
+
+## RadialGrid
+
+Takes a plane, the hole in the middle, the ring spacings measured outward from
+it, how much of the way round to cover and how many bays to cut it into, and
+sets out rays, rings and a node wherever a ray meets a ring. Rhino draws the
+round case as a `Line`, an `ArrayPolar` and an `Arc` per ring, and the polar
+array cannot stop at a quarter; the oval case it does not draw at all.
+
+**The hole is two half-axes, `InnerU` along the plane's X and `InnerV` along
+its Y.** Both zero, the default, runs the rays into the centre, which is then
+**one node shared by every ray**, and gets no ring: a ring of no size is a
+point. Equal is a round hole with a ring round it and no centre. Different is
+the stadium and arena case: an oval hole, and every ring an oval with the
+spacing added to both half-axes, which is how those grids are set out in
+practice (a true offset of an oval is not an oval). One zero and the other not
+is refused as a slit.
+
+**Rays on an oval are straight lines set out by the ring's parameter, not by
+the angle from the centre.** Ray `t` starts at `(U cos t, V sin t)` and runs
+in the direction `(cos t, sin t)`, because that direction meets every ring at
+the same parameter: the nodes along a ray are exactly the spacing apart, the
+bays line up ring to ring, and they come out wider along the long sides and
+tighter round the ends, which is the look of every stadium grid. A ray aimed
+at the centre would cross the rings at drifting parameters. On a circle the
+parameter is the angle and the two constructions are the same. What is a
+little less than the spacing, between the axes, is the clear width between
+rings measured square to them, because a ray is not quite square to an oval
+there.
+
+`Sweep` is in degrees from `StartAngle`, anticlockwise about the plane's Z,
+and on an oval it is the ring parameter, which is the true angle on the axes.
+**A full 360 is drawn with `Bays` rays, not `Bays + 1`,** because the last ray
+of a full sweep sits on the first, and two lines in one place is the mistake a
+grid tool exists to avoid; the rings close. Anything less is `Bays + 1` rays
+and rings from the first ray to the last. `Bays` is a count rather than an
+angle because a sweep that is not a whole number of angle steps leaves a part
+bay at one end, and which end is a guess.
+
+`Rows[i]` is the nodes along ray `i`; when the rays meet at the centre it is
+item 0 of every row, the same point repeated, so that item `k + 1` is always
+the `k`-th ring whether or not there is a hole. `Nodes` carries it once.
+`RingOffsets` is how far out each ring sits from the inner ring, zero for the
+inner ring itself when there is one. `Overhang` runs the rays past the outer
+ring and never extends a ring: a ring past the end ray of a partial grid would
+be a bay that is not there.
+
+One thing said in `Notes`: bays so narrow somewhere on the innermost ring that
+neighbouring nodes fall within tolerance of each other, which a column tool
+downstream will read as one column where several were meant.
 
 ## Rules
 

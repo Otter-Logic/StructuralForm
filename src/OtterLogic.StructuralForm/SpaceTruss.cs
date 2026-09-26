@@ -45,7 +45,8 @@ public sealed class SpaceTruss
         SpaceTrussOptions options,
         bool facesSideways,
         int crossingOpenings,
-        bool hasNoLines)
+        bool hasNoLines,
+        bool doublesTheTopBracing)
     {
         Grid = grid;
         BottomLattice = bottomLattice;
@@ -54,6 +55,7 @@ public sealed class SpaceTruss
         FacesSideways = facesSideways;
         CrossingOpenings = crossingOpenings;
         HasNoLines = hasNoLines;
+        DoublesTheTopBracing = doublesTheTopBracing;
     }
 
     /// <summary>The grid the truss was built on, which is its top layer exactly.</summary>
@@ -62,6 +64,9 @@ public sealed class SpaceTruss
     public SpaceTrussOptions Options { get; }
 
     public SpaceTrussType Type => Options.Type;
+
+    /// <summary>True for offset layers with a pyramid per cell; false for two-way flat trusses.</summary>
+    public bool IsPyramid => Options.Type.IsPyramid();
 
     public double Depth => Options.Depth;
 
@@ -125,10 +130,18 @@ public sealed class SpaceTruss
     public int CrossingOpenings { get; }
 
     /// <summary>
-    /// True when an aligned truss found no grid line to run along: a diagrid
+    /// True when a two-way truss found no grid line to run along: a diagrid
     /// closed on itself both ways has diagonals with no ends to start from.
     /// </summary>
     public bool HasNoLines { get; }
+
+    /// <summary>
+    /// True when pyramids were put under a triangulated grid. Legal, and
+    /// drawn as asked, but every cell is then braced twice: by its diagonal in
+    /// the top plane and by the pyramid below, with the diagonal passing over
+    /// the apex with no node between them.
+    /// </summary>
+    public bool DoublesTheTopBracing { get; }
 
     public IEnumerable<Line> MembersOf(TrussMemberRole role)
         => Members.Where(m => m.Role == role).Select(m => m.Line);
@@ -161,27 +174,24 @@ public sealed class SpaceTruss
             var notes = new List<FormNote>(4);
 
             if (FacesSideways)
-                notes.Add(Options.DepthAlong == DepthDirection.Vertical
-                    ? new FormNote(
-                        FormNoteLevel.Warning,
-                        "The surface stands on end, so a depth measured vertically puts the second layer in "
-                        + "the surface's own plane. Measure the depth along the surface normal instead.")
-                    : new FormNote(
-                        FormNoteLevel.Remark,
-                        "The surface stands on end, so it has no underside: the second layer was put on the "
-                        + "side the surface faces. Set Flip Depth to put it on the other."));
+                notes.Add(new FormNote(
+                    FormNoteLevel.Remark,
+                    "The surface stands on end, so it has no underside: the second layer was put on the "
+                    + "side the surface faces. Set Flip Depth to put it on the other."));
 
             if (HasNoLines)
                 notes.Add(new FormNote(
                     FormNoteLevel.Warning,
                     "The grid closes on itself both ways, so its lines have no ends for a truss to start "
-                    + "from, and no web was drawn. Offset puts a pyramid on every cell instead."));
+                    + "from, and no web was drawn. Pyramid puts a pyramid on every cell instead."));
 
-            if (Options.Type == SpaceTrussType.Offset && (Options.Web != TrussType.Warren || Options.FlipWeb))
+            if (DoublesTheTopBracing)
                 notes.Add(new FormNote(
                     FormNoteLevel.Remark,
-                    "Web and Flip Web are read by an aligned truss. An offset truss is a pyramid on every "
-                    + "cell, and has no pattern to choose."));
+                    "The grid is triangulated, so every cell is braced twice: by its diagonal in the top "
+                    + "layer and by the pyramid under it, with the diagonal passing over the apex with no "
+                    + "node between them. A quad grid is the usual top layer for pyramids; keep the "
+                    + "triangulated one only if the top chords are meant to be braced in their own plane."));
 
             if (CrossingOpenings > 0)
                 notes.Add(new FormNote(
